@@ -85,26 +85,34 @@ const userSchema = new mongoose.Schema({
   kids: { type: String, trim: true },
   politics: { type: String, trim: true },
   religion: { type: String, trim: true },
+  discord: { type: String, trim: true },
+  instagram: { type: String, trim: true },
   preferences: {
     path: {
       type: String,
       enum: ["anime", "game", "both"],
     },
     animeGenres: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "AnimeCategory",
+      _id: false,
+      ref: { type: mongoose.Schema.Types.ObjectId, ref: "AnimeCategory" },
+      name: { type: String },
+      slug: { type: String },
     }],
     gameGenres: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "GameCategory",
+      _id: false,
+      ref: { type: mongoose.Schema.Types.ObjectId, ref: "GameCategory" },
+      name: { type: String },
+      slug: { type: String },
     }],
     animeFavorites: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "AnimeTitle",
+      _id: false,
+      ref: { type: mongoose.Schema.Types.ObjectId, ref: "AnimeTitle" },
+      title: { type: String },
     }],
     gameFavorites: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "GameTitle",
+      _id: false,
+      ref: { type: mongoose.Schema.Types.ObjectId, ref: "GameTitle" },
+      title: { type: String },
     }],
   },
 }, {

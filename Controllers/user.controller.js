@@ -8,6 +8,7 @@ import GameTitle from "../Models/gameTitle.schema.js";
 import Country from "../Models/country.schema.js";
 import State from "../Models/state.schema.js";
 import City from "../Models/city.schema.js";
+import Report from "../Models/report.schema.js";
 import fs from "fs";
 import path from "path";
 
@@ -89,6 +90,8 @@ function buildUserResponse(user) {
     kids: user.kids || "",
     politics: user.politics || "",
     religion: user.religion || "",
+    discord: user.discord || "",
+    instagram: user.instagram || "",
   };
 }
 
@@ -245,14 +248,7 @@ export const verifyOtp = async (req, res) => {
     !user.userId && (user.userId = userId);
     await user.save();
 
-    if (user.isOnboarded) {
-      await user.populate([
-        "preferences.animeGenres",
-        "preferences.gameGenres",
-        "preferences.animeFavorites",
-        "preferences.gameFavorites",
-      ]);
-    }
+
 
     const token = generateToken(user._id);
     return res.status(200).json({
@@ -303,14 +299,7 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
-    if (user.isOnboarded) {
-      await user.populate([
-        "preferences.animeGenres",
-        "preferences.gameGenres",
-        "preferences.animeFavorites",
-        "preferences.gameFavorites",
-      ]);
-    }
+
 
     const token = generateToken(user._id);
     return res.status(200).json({
@@ -381,14 +370,7 @@ export const oauthLoginOrSignup = async (req, res) => {
       await user.save();
     }
 
-    if (user.isOnboarded) {
-      await user.populate([
-        "preferences.animeGenres",
-        "preferences.gameGenres",
-        "preferences.animeFavorites",
-        "preferences.gameFavorites",
-      ]);
-    }
+
 
     const token = generateToken(user._id);
     return res.status(200).json({
@@ -415,23 +397,24 @@ export const onboardUser = async (req, res) => {
       return res.status(400).json({ status: false, message: "Onboarding preferences are required" });
     }
 
+    // Look up actual documents to denormalize names/slugs/titles
+    const [animeGenreDocs, gameGenreDocs, animeFavDocs, gameFavDocs] = await Promise.all([
+      AnimeCategory.find({ _id: { $in: preferences.animeGenres || [] } }),
+      GameCategory.find({ _id: { $in: preferences.gameGenres || [] } }),
+      AnimeTitle.find({ _id: { $in: preferences.animeFavorites || [] } }),
+      GameTitle.find({ _id: { $in: preferences.gameFavorites || [] } }),
+    ]);
+
     user.preferences = {
       path: preferences.path,
-      animeGenres: preferences.animeGenres || [],
-      gameGenres: preferences.gameGenres || [],
-      animeFavorites: preferences.animeFavorites || [],
-      gameFavorites: preferences.gameFavorites || [],
+      animeGenres: animeGenreDocs.map(doc => ({ ref: doc._id, name: doc.name, slug: doc.slug })),
+      gameGenres: gameGenreDocs.map(doc => ({ ref: doc._id, name: doc.name, slug: doc.slug })),
+      animeFavorites: animeFavDocs.map(doc => ({ ref: doc._id, title: doc.title })),
+      gameFavorites: gameFavDocs.map(doc => ({ ref: doc._id, title: doc.title })),
     };
     user.isOnboarded = true;
 
     await user.save();
-
-    await user.populate([
-      "preferences.animeGenres",
-      "preferences.gameGenres",
-      "preferences.animeFavorites",
-      "preferences.gameFavorites",
-    ]);
 
     return res.status(200).json({
       status: true,
@@ -475,7 +458,7 @@ export const updateProfile = async (req, res) => {
 
     const {
       fullname, email, gender, age, location, bio, username,
-      height, weight, education, drinking, smoking, lookingFor, kids, politics, religion
+      height, weight, education, drinking, smoking, lookingFor, kids, politics, religion, discord, instagram
     } = req.body;
 
     if (email && email.toLowerCase().trim() !== user.email) {
@@ -516,6 +499,8 @@ export const updateProfile = async (req, res) => {
     user.kids = kids !== undefined ? kids.trim() : user.kids;
     user.politics = politics !== undefined ? politics.trim() : user.politics;
     user.religion = religion !== undefined ? religion.trim() : user.religion;
+    user.discord = discord !== undefined ? discord.trim() : user.discord;
+    user.instagram = instagram !== undefined ? instagram.trim() : user.instagram;
 
     // Mark profile as completed if all mandatory fields are filled
     if (user.fullname && user.gender && user.age && user.location) {
@@ -524,14 +509,7 @@ export const updateProfile = async (req, res) => {
 
     await user.save();
 
-    if (user.isOnboarded) {
-      await user.populate([
-        "preferences.animeGenres",
-        "preferences.gameGenres",
-        "preferences.animeFavorites",
-        "preferences.gameFavorites",
-      ]);
-    }
+
 
     return res.status(200).json({
       status: true,
@@ -571,14 +549,7 @@ export const uploadAvatar = async (req, res) => {
     user.avatar = relativePath;
     await user.save();
 
-    if (user.isOnboarded) {
-      await user.populate([
-        "preferences.animeGenres",
-        "preferences.gameGenres",
-        "preferences.animeFavorites",
-        "preferences.gameFavorites",
-      ]);
-    }
+
 
     return res.status(200).json({
       status: true,
@@ -618,14 +589,7 @@ export const uploadPhoto = async (req, res) => {
     user.profilePics.push(relativePath);
     await user.save();
 
-    if (user.isOnboarded) {
-      await user.populate([
-        "preferences.animeGenres",
-        "preferences.gameGenres",
-        "preferences.animeFavorites",
-        "preferences.gameFavorites",
-      ]);
-    }
+
 
     return res.status(200).json({
       status: true,
@@ -664,14 +628,7 @@ export const deletePhoto = async (req, res) => {
       }
     }
 
-    if (user.isOnboarded) {
-      await user.populate([
-        "preferences.animeGenres",
-        "preferences.gameGenres",
-        "preferences.animeFavorites",
-        "preferences.gameFavorites",
-      ]);
-    }
+
 
     return res.status(200).json({
       status: true,
@@ -716,6 +673,48 @@ export const getCities = async (req, res) => {
   }
 };
 
+export const getCandidates = async (req, res) => {
+  try {
+    const currentUserId = req.user._id;
+    // Find users who are not the current user and are onboarded
+    const users = await User.find({
+      _id: { $ne: currentUserId },
+      isOnboarded: true
+    });
+    
+    const candidates = users.map(user => buildUserResponse(user));
+    return res.status(200).json({ status: true, candidates });
+  } catch (error) {
+    console.error("Get Candidates Error:", error);
+    return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+export const reportUser = async (req, res) => {
+  try {
+    const reporter = req.user._id;
+    const { reportedUserId, reason, details } = req.body;
+
+    if (!reportedUserId || !reason) {
+      return res.status(400).json({ status: false, message: "Reported user ID and reason are required" });
+    }
+
+    const report = new Report({
+      reporter,
+      reportedUser: reportedUserId,
+      reason,
+      details,
+    });
+
+    await report.save();
+
+    return res.status(201).json({ status: true, message: "User reported successfully" });
+  } catch (error) {
+    console.error("Report User Error:", error);
+    return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
 export default {
   checkEmail,
   registerUser,
@@ -732,4 +731,6 @@ export default {
   getStates,
   getCities,
   generateUsername,
+  getCandidates,
+  reportUser,
 };

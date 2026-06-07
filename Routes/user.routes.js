@@ -75,5 +75,7 @@ router.put("/update-profile", authMiddleware.protect, validate(updateProfileSche
 router.post("/upload-avatar", authMiddleware.protect, upload.single("avatar"), userController.uploadAvatar);
 router.post("/upload-photo", authMiddleware.protect, upload.single("photo"), userController.uploadPhoto);
 router.delete("/delete-photo", authMiddleware.protect, validate(deletePhotoSchema), userController.deletePhoto);
+router.get("/candidates", authMiddleware.protect, userController.getCandidates);
+router.post("/report", authMiddleware.protect, userController.reportUser);
 
 export default router;
