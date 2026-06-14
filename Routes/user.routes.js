@@ -62,6 +62,32 @@ const deletePhotoSchema = {
   photoUrl: { type: "string", required: true },
 };
 
+const swipeUserSchema = {
+  swipeeId: { type: "string", required: true },
+  swipeType: { type: "string", required: true, enum: ["like", "pass", "super"] },
+  compliment: { type: "string", required: false },
+};
+
+const createOrderSchema = {
+  planId: { type: "string", required: true, enum: ["mana-drop", "power-surge", "otaku-pass"] },
+};
+
+const verifyPaymentSchema = {
+  razorpay_payment_id: { type: "string", required: true },
+  razorpay_order_id: { type: "string", required: true },
+  razorpay_signature: { type: "string", required: true },
+  planId: { type: "string", required: true, enum: ["mana-drop", "power-surge", "otaku-pass"] },
+};
+
+const redeemPlanSchema = {
+  planId: { type: "string", required: true, enum: ["mana-drop", "power-surge"] },
+};
+
+const sendChatMessageSchema = {
+  receiverId: { type: "string", required: true },
+  content: { type: "string", required: true },
+};
+
 // Routes
 router.post("/check-email", validate(checkEmailSchema), userController.checkEmail);
 router.post("/register", validate(registerSchema), userController.registerUser);
@@ -76,6 +102,15 @@ router.post("/upload-avatar", authMiddleware.protect, upload.single("avatar"), u
 router.post("/upload-photo", authMiddleware.protect, upload.single("photo"), userController.uploadPhoto);
 router.delete("/delete-photo", authMiddleware.protect, validate(deletePhotoSchema), userController.deletePhoto);
 router.get("/candidates", authMiddleware.protect, userController.getCandidates);
+router.post("/swipe", authMiddleware.protect, validate(swipeUserSchema), userController.swipeUser);
 router.post("/report", authMiddleware.protect, userController.reportUser);
+router.post("/create-order", authMiddleware.protect, validate(createOrderSchema), userController.createOrder);
+router.post("/verify-payment", authMiddleware.protect, validate(verifyPaymentSchema), userController.verifyPayment);
+router.post("/redeem-plan", authMiddleware.protect, validate(redeemPlanSchema), userController.redeemPlan);
+router.get("/plans", authMiddleware.protect, userController.getPlans);
+router.get("/lobby/likes", authMiddleware.protect, userController.getLobbyLikes);
+router.get("/lobby/chats", authMiddleware.protect, userController.getLobbyChats);
+router.get("/lobby/messages/:otherUserId", authMiddleware.protect, userController.getChatMessages);
+router.post("/lobby/messages", authMiddleware.protect, validate(sendChatMessageSchema), userController.sendChatMessage);
 
 export default router;

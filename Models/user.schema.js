@@ -115,6 +115,46 @@ const userSchema = new mongoose.Schema({
       title: { type: String },
     }],
   },
+  synergy: {
+    type: Number,
+    default: 0,
+  },
+  referredBy: {
+    type: String,
+    trim: true,
+  },
+  complimentsBalance: {
+    type: Number,
+    default: 1, // Free users get 1 free compliment upon registration
+  },
+  extraSwipesBalance: {
+    type: Number,
+    default: 0,
+  },
+  superLikesBalance: {
+    type: Number,
+    default: 1, // Free users get 1 free super like
+  },
+  isPremium: {
+    type: Boolean,
+    default: false,
+  },
+  activeSubscription: {
+    plan: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Plan",
+    },
+    planId: {
+      type: String,
+      trim: true,
+    },
+    expiresAt: {
+      type: Date,
+    },
+    purchasedAt: {
+      type: Date,
+    },
+  },
 }, {
   timestamps: true,
 });
