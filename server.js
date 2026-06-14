@@ -7,6 +7,7 @@ import rateLimit from "express-rate-limit";
 import connectDB from "./db.js";
 import userRoutes from "./Routes/user.routes.js";
 import { initSocket } from "./socket/socket.js";
+import passport from "./config/passport.js";
 
 dotenv.config();
 
@@ -86,6 +87,8 @@ app.use("/api/user/verify-otp", authLimiter);
 app.use("/api/user/check-email", authLimiter);
 
 app.use("/public", express.static("public"));
+
+app.use(passport.initialize());
 
 // Routes
 app.use("/api/user", userRoutes);

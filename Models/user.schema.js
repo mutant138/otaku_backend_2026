@@ -67,6 +67,22 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
+  locationDetails: {
+    city: { type: String, trim: true },
+    state: { type: String, trim: true },
+    country: { type: String, trim: true },
+    coordinates: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point"
+      },
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        default: [0, 0]
+      }
+    }
+  },
   bio: {
     type: String,
     trim: true,
@@ -158,6 +174,9 @@ const userSchema = new mongoose.Schema({
 }, {
   timestamps: true,
 });
+
+userSchema.index({ "locationDetails.coordinates": "2dsphere" });
+userSchema.index({ isOnboarded: 1, "preferences.path": 1 });
 
 const User = mongoose.model("User", userSchema);
 export default User;

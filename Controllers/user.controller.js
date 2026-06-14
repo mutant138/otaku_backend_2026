@@ -1,5 +1,6 @@
 import User from "../Models/user.schema.js";
 import Swipe from "../Models/swipe.schema.js";
+import passport from "passport";
 import Message from "../Models/message.schema.js";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
@@ -101,6 +102,7 @@ function buildUserResponse(user) {
     gender: user.gender || "",
     age: user.age || null,
     location: user.location || "",
+    locationDetails: user.locationDetails || null,
     bio: user.bio || "",
     // Referral & Rewards
     synergy: user.synergy || 0,
@@ -122,6 +124,50 @@ function buildUserResponse(user) {
     superLikesBalance: user.superLikesBalance !== undefined ? user.superLikesBalance : 1,
     isPremium,
     activeSubscription: user.activeSubscription || null,
+  };
+}
+
+function buildPublicUserResponse(user) {
+  if (!user) return null;
+  
+  let isPremium = user.isPremium || false;
+  if (user.activeSubscription && user.activeSubscription.expiresAt) {
+    const isExpired = new Date(user.activeSubscription.expiresAt) < new Date();
+    if (isExpired) {
+      isPremium = false;
+    }
+  }
+
+  return {
+    id: user._id,
+    userId: user.userId || "",
+    username: user.username,
+    avatar: user.avatar,
+    profilePics: user.profilePics || [],
+    isVerified: user.isVerified || false,
+    fullname: user.fullname || "",
+    gender: user.gender || "",
+    age: user.age || null,
+    location: user.location || "",
+    bio: user.bio || "",
+    preferences: user.preferences || {
+      path: "both",
+      animeGenres: [],
+      gameGenres: [],
+      animeFavorites: [],
+      gameFavorites: []
+    },
+    // More About You
+    height: user.height || "",
+    weight: user.weight || "",
+    education: user.education || "",
+    drinking: user.drinking || "",
+    smoking: user.smoking || "",
+    lookingFor: user.lookingFor || "",
+    kids: user.kids || "",
+    politics: user.politics || "",
+    religion: user.religion || "",
+    isPremium
   };
 }
 
@@ -362,86 +408,90 @@ export const loginUser = async (req, res) => {
  * Handle Google and Discord OAuth sign-in / sign-up.
  * Route: POST /api/user/oauth
  */
-export const oauthLoginOrSignup = async (req, res) => {
+export const oauthLoginOrSignup = async (req, res, next) => {
   try {
-    const { email, username, provider, providerId, avatar, referredBy } = req.body;
+    const { provider } = req.body;
 
-    if (!email || !provider || !providerId) {
-      return res.status(400).json({ message: "Email, provider, and providerId are required" });
-    }
+    if (provider === "google") {
+      passport.authenticate("google-id-token", { session: false }, async (err, user, info) => {
+        if (err) {
+          return next(err);
+        }
+        if (!user) {
+          return res.status(401).json({ status: false, message: info?.message || "Google Authentication failed" });
+        }
 
-    if (provider !== "google" && provider !== "discord") {
-      return res.status(400).json({ message: "Invalid OAuth provider" });
-    }
+        const token = generateToken(user._id);
+        return res.status(200).json({
+          status: true,
+          message: "Google login successful",
+          user: buildUserResponse(user),
+          token,
+        });
+      })(req, res, next);
+      
+    } else if (provider === "discord") {
+      const { email, username, providerId, avatar, referredBy } = req.body;
+      const normalizedEmail = email.toLowerCase().trim();
+      let user = await User.findOne({ email: normalizedEmail });
 
-    const normalizedEmail = email.toLowerCase().trim();
-    let user = await User.findOne({ email: normalizedEmail });
+      if (user) {
+        let updated = false;
+        if (!user.discordId) {
+          user.discordId = providerId;
+          updated = true;
+        }
+        if (avatar && !user.avatar) {
+          user.avatar = avatar;
+          updated = true;
+        }
+        if (!user.isVerified) {
+          user.isVerified = true;
+          updated = true;
+        }
+        if (!user.userId) {
+          user.userId = await generateUserId();
+          updated = true;
+        }
+        if (updated) await user.save();
+      } else {
+        const generatedUsername = await generateRandomUsername();
+        const newUserId = await generateUserId();
+        user = new User({
+          username: generatedUsername,
+          userId: newUserId,
+          email: normalizedEmail,
+          fullname: username ? username.trim() : "",
+          avatar: avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${generatedUsername}`,
+          discordId: providerId,
+          isVerified: true,
+          referredBy: referredBy ? referredBy.trim() : undefined,
+        });
 
-    if (user) {
-      let updated = false;
+        await user.save();
 
-      if (provider === "google" && !user.googleId) {
-        user.googleId = providerId;
-        updated = true;
-      } else if (provider === "discord" && !user.discordId) {
-        user.discordId = providerId;
-        updated = true;
-      }
-
-      if (avatar && !user.avatar) {
-        user.avatar = avatar;
-        updated = true;
-      }
-
-      if (!user.isVerified) {
-        user.isVerified = true;
-        updated = true;
-      }
-
-      if (!user.userId) {
-        user.userId = await generateUserId();
-        updated = true;
-      }
-
-      if (updated) await user.save();
-    } else {
-      const generatedUsername = await generateRandomUsername();
-      const newUserId = await generateUserId();
-      user = new User({
-        username: generatedUsername,
-        userId: newUserId,
-        email: normalizedEmail,
-        fullname: username ? username.trim() : "",
-        avatar: avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${generatedUsername}`,
-        googleId: provider === "google" ? providerId : undefined,
-        discordId: provider === "discord" ? providerId : undefined,
-        isVerified: true,
-        referredBy: referredBy ? referredBy.trim() : undefined,
-      });
-
-      await user.save();
-
-      // Award synergy to referrer immediately since OAuth is auto-verified
-      if (referredBy) {
-        const referrer = await User.findOne({ userId: referredBy.trim() });
-        if (referrer) {
-          referrer.synergy = (referrer.synergy || 0) + 5;
-          await referrer.save();
+        if (referredBy) {
+          const referrer = await User.findOne({ userId: referredBy.trim() });
+          if (referrer) {
+            referrer.synergy = (referrer.synergy || 0) + 5;
+            await referrer.save();
+          }
         }
       }
+
+      const token = generateToken(user._id);
+      return res.status(200).json({
+        status: true,
+        message: "Discord login successful",
+        user: buildUserResponse(user),
+        token,
+      });
+    } else {
+      return res.status(400).json({ status: false, message: "Invalid OAuth provider" });
     }
-
-
-
-    const token = generateToken(user._id);
-    return res.status(200).json({
-      message: "OAuth login successful",
-      user: buildUserResponse(user),
-      token,
-    });
   } catch (error) {
     console.error("OAuth Error:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
 
@@ -518,7 +568,7 @@ export const updateProfile = async (req, res) => {
     }
 
     const {
-      fullname, email, gender, age, location, bio, username,
+      fullname, email, gender, age, location, locationDetails, bio, username,
       height, weight, education, drinking, smoking, lookingFor, kids, politics, religion, discord, instagram
     } = req.body;
 
@@ -548,6 +598,21 @@ export const updateProfile = async (req, res) => {
     user.gender = gender !== undefined ? gender.trim() : user.gender;
     user.age = age !== undefined ? Number(age) : user.age;
     user.location = location !== undefined ? location.trim() : user.location;
+    
+    if (locationDetails !== undefined) {
+      user.locationDetails = {
+        city: locationDetails?.city || "",
+        state: locationDetails?.state || "",
+        country: locationDetails?.country || "",
+        coordinates: {
+          type: "Point",
+          coordinates: locationDetails?.coordinates && Array.isArray(locationDetails.coordinates)
+            ? [Number(locationDetails.coordinates[0]), Number(locationDetails.coordinates[1])]
+            : [0, 0]
+        }
+      };
+    }
+
     user.bio = bio !== undefined ? bio.trim() : user.bio;
 
     // Optional "More About You" fields
@@ -747,11 +812,23 @@ export const getCandidates = async (req, res) => {
     // Find all users the current user has already swiped on
     const swipedUserIds = await Swipe.find({ swiper: currentUserId }).distinct("swipee");
 
-    // Find users who are not the current user, have not been swiped on, and are onboarded
-    const users = await User.find({
+    // Construct query based on logged-in user's preference path (anime/game/both)
+    const userPath = req.user.preferences?.path || "both";
+    const query = {
       _id: { $ne: currentUserId, $nin: swipedUserIds },
       isOnboarded: true
-    });
+    };
+
+    if (userPath === "anime") {
+      query["preferences.path"] = { $in: ["anime", "both"] };
+    } else if (userPath === "game") {
+      query["preferences.path"] = { $in: ["game", "both"] };
+    }
+
+    // Find candidates matching the query with a limit of 40 to optimize database load
+    const users = await User.find(query)
+      .select("username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics religion isPremium activeSubscription userId")
+      .limit(40);
     
     const hasSubscription = req.user.activeSubscription &&
                             req.user.activeSubscription.expiresAt &&
@@ -770,7 +847,7 @@ export const getCandidates = async (req, res) => {
     const resetTime = new Date();
     resetTime.setUTCHours(24, 0, 0, 0); // Midnight UTC
 
-    const candidates = users.map(user => buildUserResponse(user));
+    const candidates = users.map(user => buildPublicUserResponse(user));
     return res.status(200).json({
       status: true,
       candidates,
@@ -1171,9 +1248,9 @@ export const getLobbyLikes = async (req, res) => {
       swipee: currentUserId,
       swiper: { $nin: swipedUserIds },
       swipeType: { $in: ["like", "super"] }
-    }).populate("swiper");
+    }).populate("swiper", "username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics religion isPremium activeSubscription userId");
 
-    const likes = likedSwipes.map(s => buildUserResponse(s.swiper));
+    const likes = likedSwipes.map(s => buildPublicUserResponse(s.swiper));
     return res.status(200).json({ status: true, likes });
   } catch (error) {
     console.error("Get Lobby Likes Error:", error);
@@ -1191,8 +1268,8 @@ export const getLobbyChats = async (req, res) => {
       swiper: { $in: myLikes },
       swipee: currentUserId,
       swipeType: { $in: ["like", "super"] }
-    }).populate("swiper");
-    const mutualUserIds = mutualLikes.map(s => s.swiper._id.toString());
+    });
+    const mutualUserIds = mutualLikes.map(s => s.swiper.toString());
 
     // 2. Get all distinct message partners
     const chatUsers = await Message.find({
@@ -1211,7 +1288,7 @@ export const getLobbyChats = async (req, res) => {
     // 3. Construct channels details
     const channels = [];
     for (const userId of allChannelUserIds) {
-      const otherUser = await User.findById(userId);
+      const otherUser = await User.findById(userId).select("username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics religion isPremium activeSubscription userId");
       if (!otherUser) continue;
 
       const latestMessage = await Message.findOne({
@@ -1227,7 +1304,7 @@ export const getLobbyChats = async (req, res) => {
       const isIncomingRequest = !isMutual && currentSentMessageCount === 0;
 
       channels.push({
-        user: buildUserResponse(otherUser),
+        user: buildPublicUserResponse(otherUser),
         latestMessage: latestMessage ? {
           id: latestMessage._id,
           content: latestMessage.content,

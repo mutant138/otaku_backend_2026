@@ -28,9 +28,25 @@ const loginSchema = {
 };
 
 const oauthSchema = {
-  email: { type: "email", required: true },
-  provider: { type: "string", required: true, enum: ["google", "discord"] },
-  providerId: { type: "string", required: true },
+  provider: {
+    type: "string",
+    required: true,
+    enum: ["google", "discord"],
+    validate: (value, body) => {
+      if (value === "google") {
+        if (!body.credential && !body.accessToken) {
+          return "Google ID token credential or accessToken is required";
+        }
+      } else if (value === "discord") {
+        if (!body.email) {
+          return "Email is required for Discord OAuth";
+        }
+        if (!body.providerId) {
+          return "Provider ID is required for Discord OAuth";
+        }
+      }
+    }
+  },
 };
 
 const onboardSchema = {
@@ -54,6 +70,7 @@ const updateProfileSchema = {
   gender: { type: "string", required: false },
   fullname: { type: "string", required: false },
   location: { type: "string", required: false },
+  locationDetails: { type: "object", required: false },
   bio: { type: "string", required: false },
   username: { type: "string", required: false },
 };
