@@ -8,6 +8,7 @@ import GameTitle from "./Models/gameTitle.schema.js";
 import Country from "./Models/country.schema.js";
 import State from "./Models/state.schema.js";
 import City from "./Models/city.schema.js";
+import EmailTemplate from "./Models/emailTemplate.schema.js";
 
 dotenv.config();
 
@@ -155,6 +156,7 @@ const seed = async () => {
     await Country.deleteMany({});
     await State.deleteMany({});
     await City.deleteMany({});
+    await EmailTemplate.deleteMany({});
 
     // Seed Locations
     console.log("Seeding Location Data...");
@@ -219,6 +221,55 @@ const seed = async () => {
 
     console.log("Seeding Game Titles...");
     await GameTitle.insertMany(gameTitlesToInsert);
+
+    console.log("Seeding Email Templates...");
+    await EmailTemplate.create({
+      identifier: "otp-verification",
+      subject: "Verify your OtakuDuo account",
+      content: `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px; background-color: #ffffff;">
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h2 style="color: #ff4757; margin: 0;">OtakuDuo</h2>
+    <p style="color: #7f8c8d; font-size: 14px; margin-top: 5px;">Where Anime Fans and Gamers Connect</p>
+  </div>
+  <div style="padding: 20px; border-top: 3px solid #ff4757; border-bottom: 1px solid #e0e0e0;">
+    <p style="font-size: 16px; color: #2c3e50;">Hello <strong>{{fullname}}</strong>,</p>
+    <p style="font-size: 16px; color: #34495e; line-height: 1.5;">Thank you for registering on OtakuDuo! Please use the following One-Time Password (OTP) to verify your account. This code is valid for 10 minutes.</p>
+    <div style="text-align: center; margin: 30px 0;">
+      <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #ff4757; padding: 10px 20px; background-color: #ffeef0; border-radius: 5px; border: 1px dashed #ff4757;">{{otp}}</span>
+    </div>
+    <p style="font-size: 14px; color: #7f8c8d; line-height: 1.5;">If you did not request this, please ignore this email.</p>
+  </div>
+  <div style="text-align: center; margin-top: 20px; color: #bdc3c7; font-size: 12px;">
+    &copy; 2026 OtakuDuo. All rights reserved.
+  </div>
+</div>
+      `.trim()
+    });
+
+    await EmailTemplate.create({
+      identifier: "forgot-password",
+      subject: "Reset your OtakuDuo password",
+      content: `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px; background-color: #ffffff;">
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h2 style="color: #ff4757; margin: 0;">OtakuDuo</h2>
+    <p style="color: #7f8c8d; font-size: 14px; margin-top: 5px;">Where Anime Fans and Gamers Connect</p>
+  </div>
+  <div style="padding: 20px; border-top: 3px solid #ff4757; border-bottom: 1px solid #e0e0e0;">
+    <p style="font-size: 16px; color: #2c3e50;">Hello <strong>{{fullname}}</strong>,</p>
+    <p style="font-size: 16px; color: #34495e; line-height: 1.5;">We received a request to reset the password for your OtakuDuo account. Please use the following One-Time Password (OTP) to complete the reset. This code is valid for 5 minutes.</p>
+    <div style="text-align: center; margin: 30px 0;">
+      <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #ff4757; padding: 10px 20px; background-color: #ffeef0; border-radius: 5px; border: 1px dashed #ff4757;">{{otp}}</span>
+    </div>
+    <p style="font-size: 14px; color: #7f8c8d; line-height: 1.5;">If you did not request this, please ignore this email.</p>
+  </div>
+  <div style="text-align: center; margin-top: 20px; color: #bdc3c7; font-size: 12px;">
+    &copy; 2026 OtakuDuo. All rights reserved.
+  </div>
+</div>
+      `.trim()
+    });
 
     console.log("Database seeded successfully!");
     mongoose.connection.close();

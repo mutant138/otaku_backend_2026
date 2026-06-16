@@ -48,6 +48,16 @@ const userSchema = new mongoose.Schema({
   otpExpiresAt: {
     type: Date,
   },
+  resetPasswordOtp: {
+    type: String,
+  },
+  resetPasswordOtpExpiresAt: {
+    type: Date,
+  },
+  isBot: {
+    type: Boolean,
+    default: false,
+  },
   isOnboarded: {
     type: Boolean,
     default: false,

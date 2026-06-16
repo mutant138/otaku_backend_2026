@@ -22,9 +22,23 @@ const verifyOtpSchema = {
   otp: { type: "string", required: true },
 };
 
+const resendOtpSchema = {
+  email: { type: "email", required: true },
+};
+
 const loginSchema = {
   email: { type: "email", required: true },
   password: { type: "string", required: true },
+};
+
+const forgotPasswordSchema = {
+  email: { type: "email", required: true },
+};
+
+const resetPasswordSchema = {
+  email: { type: "email", required: true },
+  otp: { type: "string", required: true },
+  newPassword: { type: "string", required: true },
 };
 
 const oauthSchema = {
@@ -38,11 +52,13 @@ const oauthSchema = {
           return "Google ID token credential or accessToken is required";
         }
       } else if (value === "discord") {
-        if (!body.email) {
-          return "Email is required for Discord OAuth";
-        }
-        if (!body.providerId) {
-          return "Provider ID is required for Discord OAuth";
+        if (!body.code) {
+          if (!body.email) {
+            return "Email or authorization code is required for Discord OAuth";
+          }
+          if (!body.providerId) {
+            return "Provider ID is required for Discord OAuth";
+          }
         }
       }
     }
@@ -109,7 +125,10 @@ const sendChatMessageSchema = {
 router.post("/check-email", validate(checkEmailSchema), userController.checkEmail);
 router.post("/register", validate(registerSchema), userController.registerUser);
 router.post("/verify-otp", validate(verifyOtpSchema), userController.verifyOtp);
+router.post("/resend-otp", validate(resendOtpSchema), userController.resendOtp);
 router.post("/login", validate(loginSchema), userController.loginUser);
+router.post("/forgot-password", validate(forgotPasswordSchema), userController.forgotPassword);
+router.post("/reset-password", validate(resetPasswordSchema), userController.resetPassword);
 router.post("/oauth", validate(oauthSchema), userController.oauthLoginOrSignup);
 router.post("/onboard", authMiddleware.protect, validate(onboardSchema), userController.onboardUser);
 router.get("/generate-username", authMiddleware.protect, userController.generateUsername);
@@ -126,6 +145,7 @@ router.post("/verify-payment", authMiddleware.protect, validate(verifyPaymentSch
 router.post("/redeem-plan", authMiddleware.protect, validate(redeemPlanSchema), userController.redeemPlan);
 router.get("/plans", authMiddleware.protect, userController.getPlans);
 router.get("/lobby/likes", authMiddleware.protect, userController.getLobbyLikes);
+router.get("/profile/:id", authMiddleware.protect, userController.getUserProfile);
 router.get("/lobby/chats", authMiddleware.protect, userController.getLobbyChats);
 router.get("/lobby/messages/:otherUserId", authMiddleware.protect, userController.getChatMessages);
 router.post("/lobby/messages", authMiddleware.protect, validate(sendChatMessageSchema), userController.sendChatMessage);

@@ -2,6 +2,7 @@ import User from "../Models/user.schema.js";
 import Swipe from "../Models/swipe.schema.js";
 import passport from "passport";
 import Message from "../Models/message.schema.js";
+import axios from "axios";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import { generateToken, generateUserId } from "../utils/jwt.js";
@@ -19,9 +20,10 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import Razorpay from "razorpay";
+import { sendEmail } from "../utils/email.js";
 
-// Hardcoded OTP for development
-const HARDCODED_OTP = "123456";
+// Helper to generate a dynamic 6-digit OTP
+const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 const ANIME_PREFIXES = [
   "Shinobi", "Saiyan", "Ghoul", "Titan", "Jujutsu", "Hokage", "Bankai", "Tsundere", "Yandere", "Senpai",
@@ -167,6 +169,9 @@ function buildPublicUserResponse(user) {
     kids: user.kids || "",
     politics: user.politics || "",
     religion: user.religion || "",
+    discord: user.discord || "",
+    instagram: user.instagram || "",
+    synergy: user.synergy || 0,
     isPremium
   };
 }
@@ -228,17 +233,68 @@ export const registerUser = async (req, res) => {
         user.password = await bcrypt.hash(password, salt);
         user.fullname = fullname.trim();
         user.username = await generateRandomUsername();
-        user.otp = HARDCODED_OTP;
-        user.otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+        const otp = generateOTP();
+        user.otp = otp;
+        user.otpExpiresAt = new Date(Date.now() + 3 * 60 * 1000); // 3 min
         if (referredBy) {
           user.referredBy = referredBy.trim();
         }
         await user.save();
 
+        // Send OTP verification email
+        try {
+          await sendEmail({
+            to: user.email,
+            templateIdentifier: "otp-verification",
+            replacements: {
+              fullname: user.fullname,
+              otp: otp
+            }
+          });
+        } catch (mailErr) {
+          console.error("Failed to send verification email (OAuth link):", mailErr);
+        }
+
         return res.status(200).json({
           message: "OTP sent to your email for verification.",
           requiresOtp: true,
           email: user.email,
+          otpExpiresAt: user.otpExpiresAt.toISOString(),
+        });
+      }
+
+      // User exists but is NOT verified — allow them to update details and re-request OTP
+      if (!user.isVerified) {
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(password, salt);
+        user.fullname = fullname.trim();
+        const otp = generateOTP();
+        user.otp = otp;
+        user.otpExpiresAt = new Date(Date.now() + 3 * 60 * 1000); // 3 min
+        if (referredBy) {
+          user.referredBy = referredBy.trim();
+        }
+        await user.save();
+
+        // Send OTP verification email
+        try {
+          await sendEmail({
+            to: user.email,
+            templateIdentifier: "otp-verification",
+            replacements: {
+              fullname: user.fullname,
+              otp: otp
+            }
+          });
+        } catch (mailErr) {
+          console.error("Failed to send verification email (Re-registration):", mailErr);
+        }
+
+        return res.status(200).json({
+          message: "OTP sent to your email for verification.",
+          status: true,
+          email: user.email,
+          otpExpiresAt: user.otpExpiresAt.toISOString(),
         });
       }
 
@@ -251,6 +307,7 @@ export const registerUser = async (req, res) => {
     // Generate user Id
     const userId = await generateUserId();
     const generatedUsername = await generateRandomUsername();
+    const otp = generateOTP();
 
     user = new User({
       username: generatedUsername,
@@ -259,17 +316,32 @@ export const registerUser = async (req, res) => {
       password: hashedPassword,
       userId: userId,
       avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${generatedUsername}`,
-      otp: HARDCODED_OTP,
-      otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 min
+      otp: otp,
+      otpExpiresAt: new Date(Date.now() + 3 * 60 * 1000), // 3 min
       referredBy: referredBy ? referredBy.trim() : undefined,
     });
 
     await user.save();
 
+    // Send OTP verification email
+    try {
+      await sendEmail({
+        to: user.email,
+        templateIdentifier: "otp-verification",
+        replacements: {
+          fullname: user.fullname,
+          otp: otp
+        }
+      });
+    } catch (mailErr) {
+      console.error("Failed to send verification email (Registration):", mailErr);
+    }
+
     return res.status(201).json({
       message: "OTP sent to your email for verification.",
       status: true,
       email: user.email,
+      otpExpiresAt: user.otpExpiresAt.toISOString(),
     });
   } catch (error) {
     console.error("Register Error:", error);
@@ -306,7 +378,7 @@ export const verifyOtp = async (req, res) => {
       user.otp = undefined;
       user.otpExpiresAt = undefined;
       await user.save();
-      return res.status(400).json({ message: "OTP has expired. Please register again." });
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
     }
 
     // Compare OTP
@@ -338,8 +410,6 @@ export const verifyOtp = async (req, res) => {
       }
     }
 
-
-
     const token = generateToken(user._id);
     return res.status(200).json({
       message: "Email verified successfully",
@@ -349,6 +419,59 @@ export const verifyOtp = async (req, res) => {
     });
   } catch (error) {
     console.error("Verify OTP Error:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/**
+ * Resend the OTP to a user's email.
+ * Route: POST /api/user/resend-otp
+ */
+export const resendOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ message: "Email is already verified. Please log in." });
+    }
+
+    const otp = generateOTP();
+    user.otp = otp;
+    user.otpExpiresAt = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+    await user.save();
+
+    // Send OTP verification email
+    try {
+      await sendEmail({
+        to: user.email,
+        templateIdentifier: "otp-verification",
+        replacements: {
+          fullname: user.fullname,
+          otp: otp
+        }
+      });
+    } catch (mailErr) {
+      console.error("Failed to send verification email (Resend):", mailErr);
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "OTP resent successfully to your email.",
+      email: user.email,
+      otpExpiresAt: user.otpExpiresAt.toISOString(),
+    });
+  } catch (error) {
+    console.error("Resend OTP Error:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 };
@@ -389,7 +512,34 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
+    // Check if the user is verified; if not, do OTP verification
+    if (!user.isVerified) {
+      const otp = generateOTP();
+      user.otp = otp;
+      user.otpExpiresAt = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+      await user.save();
 
+      // Send verification email
+      try {
+        await sendEmail({
+          to: user.email,
+          templateIdentifier: "otp-verification",
+          replacements: {
+            fullname: user.fullname,
+            otp: otp
+          }
+        });
+      } catch (mailErr) {
+        console.error("Failed to send OTP verification email during login:", mailErr);
+      }
+
+      return res.status(200).json({
+        message: "Your email is not verified. OTP sent to your email for verification.",
+        requiresOtp: true,
+        email: user.email,
+        otpExpiresAt: user.otpExpiresAt.toISOString(),
+      });
+    }
 
     const token = generateToken(user._id);
     return res.status(200).json({
@@ -407,6 +557,14 @@ export const loginUser = async (req, res) => {
 /**
  * Handle Google and Discord OAuth sign-in / sign-up.
  * Route: POST /api/user/oauth
+ * 
+ * Imports Used:
+ * - User (from ../Models/user.schema.js)
+ * - passport (from passport)
+ * - axios (from axios)
+ * - generateToken, generateUserId (from ../utils/jwt.js)
+ * - buildUserResponse (local helper function)
+ * - generateRandomUsername (local helper function)
  */
 export const oauthLoginOrSignup = async (req, res, next) => {
   try {
@@ -431,7 +589,57 @@ export const oauthLoginOrSignup = async (req, res, next) => {
       })(req, res, next);
       
     } else if (provider === "discord") {
-      const { email, username, providerId, avatar, referredBy } = req.body;
+      let { email, username, providerId, avatar, referredBy, code, redirectUri } = req.body;
+
+      if (code) {
+        try {
+          // 1. Exchange authorization code for access token
+          const tokenResponse = await axios.post(
+            "https://discord.com/api/oauth2/token",
+            new URLSearchParams({
+              client_id: process.env.DISCORD_CLIENT_ID,
+              client_secret: process.env.DISCORD_CLIENT_SECRET,
+              grant_type: "authorization_code",
+              code,
+              redirect_uri: redirectUri || "http://localhost:3000",
+            }),
+            {
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+            }
+          );
+
+          const { access_token } = tokenResponse.data;
+
+          // 2. Fetch user profile from Discord
+          const userResponse = await axios.get("https://discord.com/api/users/@me", {
+            headers: {
+              Authorization: `Bearer ${access_token}`,
+            },
+          });
+
+          const discordUser = userResponse.data;
+          email = discordUser.email;
+          username = discordUser.username;
+          providerId = discordUser.id;
+          avatar = discordUser.avatar
+            ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
+            : `https://cdn.discordapp.com/embed/avatars/${parseInt(discordUser.discriminator || "0", 10) % 5}.png`;
+
+          if (!email) {
+            return res.status(400).json({ status: false, message: "Discord account must have a verified email address." });
+          }
+        } catch (exchangeErr) {
+          console.error("Discord exchange error details:", exchangeErr.response?.data || exchangeErr.message);
+          return res.status(401).json({ status: false, message: "Failed to authenticate with Discord" });
+        }
+      }
+
+      if (!email || !providerId) {
+        return res.status(400).json({ status: false, message: "Email and provider ID are required for Discord OAuth" });
+      }
+
       const normalizedEmail = email.toLowerCase().trim();
       let user = await User.findOne({ email: normalizedEmail });
 
@@ -809,13 +1017,28 @@ export const getCandidates = async (req, res) => {
   try {
     const currentUserId = req.user._id;
 
-    // Find all users the current user has already swiped on
-    const swipedUserIds = await Swipe.find({ swiper: currentUserId }).distinct("swipee");
+    // Find all users the current user has permanently swiped on (likes and super-likes)
+    const permanentExcludes = await Swipe.find({
+      swiper: currentUserId,
+      swipeType: { $in: ["like", "super"] }
+    }).distinct("swipee");
+
+    // Find recent passes (within the last 3 days) to exclude
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    const recentPasses = await Swipe.find({
+      swiper: currentUserId,
+      swipeType: "pass",
+      createdAt: { $gte: threeDaysAgo }
+    }).distinct("swipee");
+
+    // Combine permanent exclusions and recent passes
+    const excludedUserIds = [...new Set([...permanentExcludes, ...recentPasses])];
 
     // Construct query based on logged-in user's preference path (anime/game/both)
     const userPath = req.user.preferences?.path || "both";
     const query = {
-      _id: { $ne: currentUserId, $nin: swipedUserIds },
+      _id: { $ne: currentUserId, $nin: excludedUserIds },
       isOnboarded: true
     };
 
@@ -951,6 +1174,31 @@ export const swipeUser = async (req, res) => {
       swipeType,
     });
     await newSwipe.save();
+
+    // Hook for Welcome Bot instant match response (Strategy 4)
+    if (swipee.isBot && ["like", "super"].includes(swipeType)) {
+      // Create reverse swipe from Bot to User if it doesn't already exist (fail-safe)
+      const botSwipeExists = await Swipe.findOne({ swiper: swipeeId, swipee: swiperId });
+      if (!botSwipeExists) {
+        await Swipe.create({
+          swiper: swipeeId,
+          swipee: swiperId,
+          swipeType: "like"
+        });
+      }
+
+      // Check if a welcome message has already been sent to avoid duplicates
+      const welcomeMsgExists = await Message.findOne({ sender: swipeeId, receiver: swiperId });
+      if (!welcomeMsgExists) {
+        const welcomeMessage = new Message({
+          sender: swipeeId,
+          receiver: swiperId,
+          content: "Hi! Welcome to OtakuDuo. I'm Jarvis, your system guide. I can help you calibrate your credentials, search for other players, or just keep you company. What anime or game are you currently hyperfocused on?",
+          isRead: false,
+        });
+        await welcomeMessage.save();
+      }
+    }
 
     // Deduct extra swipes if daily limit exceeded
     if (!hasSubscription && todaySwipesCount >= 5) {
@@ -1250,7 +1498,14 @@ export const getLobbyLikes = async (req, res) => {
       swipeType: { $in: ["like", "super"] }
     }).populate("swiper", "username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics religion isPremium activeSubscription userId");
 
-    const likes = likedSwipes.map(s => buildPublicUserResponse(s.swiper));
+    const likes = likedSwipes.map(s => {
+      const userRes = buildPublicUserResponse(s.swiper);
+      if (userRes) {
+        userRes.swipeType = s.swipeType;
+        userRes.compliment = s.compliment || "";
+      }
+      return userRes;
+    }).filter(Boolean);
     return res.status(200).json({ status: true, likes });
   } catch (error) {
     console.error("Get Lobby Likes Error:", error);
@@ -1526,10 +1781,167 @@ export const redeemPlan = async (req, res) => {
   }
 };
 
+/**
+ * Initiate forgot password process.
+ * Route: POST /api/user/forgot-password
+ * 
+ * Imports Used:
+ * - User (from ../Models/user.schema.js)
+ * - sendEmail (from ../utils/email.js)
+ * - generateOTP (local helper function)
+ */
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user) {
+      return res.status(400).json({ message: "User with this email not found" });
+    }
+
+    const otp = generateOTP();
+    user.resetPasswordOtp = otp;
+    user.resetPasswordOtpExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    await user.save();
+
+    // Send OTP verification email
+    try {
+      await sendEmail({
+        to: user.email,
+        templateIdentifier: "forgot-password",
+        replacements: {
+          fullname: user.fullname || user.username || "Otaku User",
+          otp: otp
+        }
+      });
+    } catch (mailErr) {
+      console.error("Failed to send reset password email:", mailErr);
+    }
+
+    return res.status(200).json({
+      message: "Reset code sent to your email.",
+      status: true,
+      email: user.email,
+      resetPasswordOtpExpiresAt: user.resetPasswordOtpExpiresAt.toISOString(),
+    });
+  } catch (error) {
+    console.error("Forgot Password Error:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/**
+ * Reset user password with OTP code.
+ * Route: POST /api/user/reset-password
+ * 
+ * Imports Used:
+ * - User (from ../Models/user.schema.js)
+ * - bcrypt (from bcryptjs)
+ * - generateRandomUsername (local helper function)
+ * - generateUserId (from ../utils/jwt.js)
+ */
+export const resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
+    if (!user.resetPasswordOtp) {
+      return res.status(400).json({ message: "No password reset request found" });
+    }
+
+    // Check expiry
+    if (user.resetPasswordOtpExpiresAt && user.resetPasswordOtpExpiresAt < new Date()) {
+      user.resetPasswordOtp = undefined;
+      user.resetPasswordOtpExpiresAt = undefined;
+      await user.save();
+      return res.status(400).json({ message: "Reset code has expired. Please request a new one." });
+    }
+
+    // Compare OTP
+    if (user.resetPasswordOtp !== otp) {
+      return res.status(400).json({ message: "Invalid reset code" });
+    }
+
+    // Hash the new password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+
+    // Clear forgot password fields
+    user.resetPasswordOtp = undefined;
+    user.resetPasswordOtpExpiresAt = undefined;
+
+    // Automatically verify the user since they verified their email ownership via forgot-password code
+    user.isVerified = true;
+
+    // Auto-generate username/userId if the user registered via social login but did not complete basic profile/sign up setup yet (e.g. user was unverified/OAuth without password)
+    if (!user.username) {
+      user.username = await generateRandomUsername();
+    }
+    if (!user.userId) {
+      user.userId = await generateUserId();
+    }
+
+    await user.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Password reset successful. Please login with your new password.",
+    });
+  } catch (error) {
+    console.error("Reset Password Error:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/**
+ * Retrieve public profile details for a specific user.
+ * Route: GET /api/user/profile/:id
+ * 
+ * Imports Used:
+ * - User (from ../Models/user.schema.js)
+ * - buildPublicUserResponse (local helper function)
+ */
+export const getUserProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ status: false, message: "Invalid user ID format" });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ status: false, message: "User profile not found" });
+    }
+
+    return res.status(200).json({
+      status: true,
+      user: buildPublicUserResponse(user),
+    });
+  } catch (error) {
+    console.error("Get User Profile Error:", error);
+    return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
 export default {
   checkEmail,
   registerUser,
   verifyOtp,
+  resendOtp,
   loginUser,
   oauthLoginOrSignup,
   onboardUser,
@@ -1553,4 +1965,7 @@ export default {
   getChatMessages,
   sendChatMessage,
   redeemPlan,
+  forgotPassword,
+  resetPassword,
+  getUserProfile,
 };
