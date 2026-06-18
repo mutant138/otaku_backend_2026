@@ -9,6 +9,7 @@ import userRoutes from "./Routes/user.routes.js";
 import { initSocket } from "./socket/socket.js";
 import passport from "./config/passport.js";
 import { ensureWelcomeBot, startWelcomeBotScheduler } from "./utils/seedWelcomeBot.js";
+import mongoose from "mongoose";
 
 dotenv.config();
 
@@ -87,6 +88,15 @@ app.use("/api/user/register", authLimiter);
 app.use("/api/user/verify-otp", authLimiter);
 app.use("/api/user/check-email", authLimiter);
 
+// Database connection status health check
+app.use("/api", (req, res, next) => {
+  const state = mongoose.connection.readyState;
+  if (state !== 1 && state !== 2) {
+    return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+  next();
+});
+
 app.use("/public", express.static("public"));
 
 app.use(passport.initialize());
@@ -106,9 +116,12 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ status: false, message: "File size exceeds the 5MB limit." });
   }
   
-  res.status(err.status || 500).json({
+  const statusCode = err.status || 500;
+  const isServerError = statusCode >= 500;
+  
+  res.status(statusCode).json({
     status: false,
-    message: err.message || "Internal server error"
+    message: isServerError ? "Internal server error" : (err.message || "Internal server error")
   });
 });
 
