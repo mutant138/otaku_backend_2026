@@ -12,13 +12,15 @@ import { ensureWelcomeBot, startWelcomeBotScheduler } from "./utils/seedWelcomeB
 import mongoose from "mongoose";
 
 dotenv.config();
+// import dns from "dns";
 
+// dns.setServers(["1.1.1.1", "1.0.0.1"]);
 const app = express();
 
 // Apply security headers (allow cross-origin resource sharing for static files)
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-}));
+// app.use(helmet({
+//   crossOriginResourcePolicy: { policy: "cross-origin" },
+// }));
 
 // Configure CORS with allowed origins list
 const allowedOrigins = [
@@ -111,14 +113,14 @@ app.get("/", (req, res) => {
 // Centralized error handling middleware
 app.use((err, req, res, next) => {
   console.error("Unhandled Server Error:", err.stack || err);
-  
+
   if (err.code === "LIMIT_FILE_SIZE") {
     return res.status(400).json({ status: false, message: "File size exceeds the 5MB limit." });
   }
-  
+
   const statusCode = err.status || 500;
   const isServerError = statusCode >= 500;
-  
+
   res.status(statusCode).json({
     status: false,
     message: isServerError ? "Internal server error" : (err.message || "Internal server error")
