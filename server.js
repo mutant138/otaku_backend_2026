@@ -18,9 +18,9 @@ dotenv.config();
 const app = express();
 
 // Apply security headers (allow cross-origin resource sharing for static files)
-// app.use(helmet({
-//   crossOriginResourcePolicy: { policy: "cross-origin" },
-// }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
 
 // Configure CORS with allowed origins list
 const allowedOrigins = [
