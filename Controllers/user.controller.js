@@ -1066,7 +1066,7 @@ export const getCandidates = async (req, res) => {
       createdAt: { $gte: startOfDay }
     });
 
-    const swipesLeft = hasSubscription ? 9999 : Math.max(0, 5 + (req.user.extraSwipesBalance || 0) - todaySwipesCount);
+    const swipesLeft = hasSubscription ? 9999 : Math.max(0, 5 - todaySwipesCount) + (req.user.extraSwipesBalance || 0);
     const resetTime = new Date();
     resetTime.setUTCHours(24, 0, 0, 0); // Midnight UTC
 
@@ -1155,9 +1155,9 @@ export const swipeUser = async (req, res) => {
     const resetTime = new Date();
     resetTime.setUTCHours(24, 0, 0, 0);
 
-    const totalSwipesAllowed = 5 + (user.extraSwipesBalance || 0);
+    const isLimitExceeded = todaySwipesCount >= 5 && (user.extraSwipesBalance || 0) <= 0;
 
-    if (!hasSubscription && todaySwipesCount >= totalSwipesAllowed) {
+    if (!hasSubscription && isLimitExceeded) {
       return res.status(403).json({
         status: false,
         limitReached: true,
@@ -1227,7 +1227,7 @@ export const swipeUser = async (req, res) => {
       await user.save();
     }
 
-    const newSwipesLeft = hasSubscription ? 9999 : Math.max(0, 5 + (user.extraSwipesBalance || 0) - (todaySwipesCount + 1));
+    const newSwipesLeft = hasSubscription ? 9999 : Math.max(0, 5 - (todaySwipesCount + 1)) + (user.extraSwipesBalance || 0);
 
     return res.status(201).json({
       status: true,
