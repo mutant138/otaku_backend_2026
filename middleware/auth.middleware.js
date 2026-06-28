@@ -19,3 +19,14 @@ export const protect = async (req, res, next) => {
         return res.status(401).json({ message: "Unauthorized user" });
     }
 };
+
+export const requireOnboarded = (req, res, next) => {
+    if (!req.user || !req.user.isOnboarded) {
+        return res.status(403).json({
+            status: false,
+            message: "Onboarding is required to perform this action."
+        });
+    }
+    next();
+};
+

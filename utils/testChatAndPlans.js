@@ -436,6 +436,19 @@ async function runTests() {
     }
     console.log("✓ Free user incoming request view blocked successfully.");
 
+    // User B (Free) attempts to reply to the locked request
+    const reqB_send = {
+      user: userB,
+      body: { receiverId: userA._id.toString(), content: "Replying to locked request" }
+    };
+    const resB_send = makeRes();
+    await sendChatMessage(reqB_send, resB_send);
+    const resultB_send = await resB_send.promise;
+    if (resultB_send.statusCode !== 403 || !resultB_send.body.needsWeeklyPass) {
+      throw new Error(`Expected 403 needsWeeklyPass for free user sending reply, got status ${resultB_send.statusCode}`);
+    }
+    console.log("✓ Free user reply to incoming request blocked successfully.");
+
     // Upgrade User B to power-surge (Not otaku-pass)
     userB.activeSubscription = {
       plan: powerSurgePlan._id,
@@ -451,6 +464,15 @@ async function runTests() {
       throw new Error(`Expected 403 needsWeeklyPass even with Power Surge, got status ${resultB_power.statusCode}`);
     }
     console.log("✓ User B with Power Surge still blocked from incoming requests successfully.");
+
+    // User B (Power Surge) attempts to reply to the locked request
+    const resB_power_send = makeRes();
+    await sendChatMessage(reqB_send, resB_power_send);
+    const resultB_power_send = await resB_power_send.promise;
+    if (resultB_power_send.statusCode !== 403 || !resultB_power_send.body.needsWeeklyPass) {
+      throw new Error(`Expected 403 needsWeeklyPass even with Power Surge when sending, got status ${resultB_power_send.statusCode}`);
+    }
+    console.log("✓ User B with Power Surge still blocked from replying successfully.");
 
     // Upgrade User B to otaku-pass
     userB.activeSubscription = {
@@ -478,6 +500,15 @@ async function runTests() {
       throw new Error("Incoming messages were not marked as read upon retrieval!");
     }
     console.log("✓ Messages marked as read successfully.");
+
+    // User B (Otaku Pass) replies successfully
+    const resB_otaku_send = makeRes();
+    await sendChatMessage(reqB_send, resB_otaku_send);
+    const resultB_otaku_send = await resB_otaku_send.promise;
+    if (resultB_otaku_send.statusCode !== 201) {
+      throw new Error(`Expected 201 Created for Otaku Pass user sending message, got status ${resultB_otaku_send.statusCode}`);
+    }
+    console.log("✓ User B with Otaku Pass successfully replied to the request.");
     console.log("✓ Test Case 6 Passed! Chat lock rules for Otaku Pass fully verified.");
   }
 
@@ -502,10 +533,14 @@ async function runTests() {
     await sendChatMessage(req1, res1);
     const result1 = await res1.promise;
 
-    if (result1.statusCode !== 403 || !result1.body.needsRefill) {
-      throw new Error(`Expected 403 needsRefill for 0 balance, got status ${result1.statusCode}`);
+    if (result1.statusCode !== 201) {
+      throw new Error(`Expected message send to succeed for 0 balance, got status ${result1.statusCode}`);
     }
-    console.log("✓ Free user with 0 compliments balance blocked from sending chat message.");
+    const updatedUserA = await User.findById(userA._id);
+    if (updatedUserA.complimentsBalance !== 0) {
+      throw new Error(`Expected complimentsBalance to remain 0, got ${updatedUserA.complimentsBalance}`);
+    }
+    console.log("✓ Free user with 0 compliments balance can send chat messages without decrement.");
 
     // 2. User A with 1 compliment balance sends message
     userA.complimentsBalance = 1;
@@ -516,14 +551,14 @@ async function runTests() {
     const result1_retry = await res1_retry.promise;
 
     if (result1_retry.statusCode !== 201) {
-      throw new Error(`Expected message send to succeed, got status ${result1_retry.statusCode}`);
+      throw new Error(`Expected message send to succeed for 1 balance, got status ${result1_retry.statusCode}`);
     }
 
-    const updatedUserA = await User.findById(userA._id);
-    if (updatedUserA.complimentsBalance !== 0) {
-      throw new Error(`complimentsBalance should decrement to 0, got ${updatedUserA.complimentsBalance}`);
+    const updatedUserA2 = await User.findById(userA._id);
+    if (updatedUserA2.complimentsBalance !== 1) {
+      throw new Error(`complimentsBalance should remain 1, got ${updatedUserA2.complimentsBalance}`);
     }
-    console.log("✓ Message sent and compliments balance decremented successfully.");
+    console.log("✓ Free user with 1 compliment balance can send chat messages without decrement.");
 
     // 3. User A with active subscription sends message
     userA.activeSubscription = {
@@ -541,8 +576,8 @@ async function runTests() {
       throw new Error(`Expected message send to succeed for subscriber, got status ${resultSub.statusCode}`);
     }
     const finalUserA = await User.findById(userA._id);
-    if (finalUserA.complimentsBalance !== 0) {
-      throw new Error(`Subscriber complimentsBalance should remain 0`);
+    if (finalUserA.complimentsBalance !== 1) {
+      throw new Error(`Subscriber complimentsBalance should remain 1, got ${finalUserA.complimentsBalance}`);
     }
     console.log("✓ Subscriber sent chat message without decrementing compliments balance.");
     console.log("✓ Test Case 7 Passed! Chat message balance logic correctly verified.");

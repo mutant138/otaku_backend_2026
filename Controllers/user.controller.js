@@ -1649,18 +1649,27 @@ export const sendChatMessage = async (req, res) => {
                             req.user.activeSubscription.expiresAt &&
                             new Date(req.user.activeSubscription.expiresAt) > new Date();
 
-    // Check message balance if not subscribed
-    if (!hasSubscription) {
-      if (req.user.complimentsBalance <= 0) {
-        return res.status(403).json({
-          status: false,
-          needsRefill: true,
-          message: "Message balance depleted! Please purchase a refill or weekly pass to send messages."
-        });
-      }
-      req.user.complimentsBalance = Math.max(0, req.user.complimentsBalance - 1);
-      await req.user.save();
+    // Check if it is locked for incoming requests without Weekly Pass (Otaku Pass)
+    const myLike = await Swipe.findOne({ swiper: currentUserId, swipee: receiverId, swipeType: { $in: ["like", "super"] } });
+    const otherLike = await Swipe.findOne({ swiper: receiverId, swipee: currentUserId, swipeType: { $in: ["like", "super"] } });
+    const isMutual = myLike && otherLike;
+
+    const currentSentMessageCount = await Message.countDocuments({ sender: currentUserId, receiver: receiverId });
+    const isIncomingRequest = !isMutual && currentSentMessageCount === 0;
+
+    const hasWeeklyPass = req.user.activeSubscription &&
+                          req.user.activeSubscription.planId === "otaku-pass" &&
+                          new Date(req.user.activeSubscription.expiresAt) > new Date();
+
+    if (isIncomingRequest && !hasWeeklyPass) {
+      return res.status(403).json({
+        status: false,
+        needsWeeklyPass: true,
+        message: "Incoming chat request locked. Upgrade to Otaku Pass to view and reply!"
+      });
     }
+
+
 
     const newMessage = new Message({
       sender: currentUserId,
@@ -1804,6 +1813,15 @@ export const forgotPassword = async (req, res) => {
       return res.status(400).json({ message: "User with this email not found" });
     }
 
+    if (user.resetPasswordOtp && user.resetPasswordOtpExpiresAt && user.resetPasswordOtpExpiresAt > new Date()) {
+      return res.status(200).json({
+        message: "Reset code already sent. Please check your email.",
+        status: true,
+        email: user.email,
+        resetPasswordOtpExpiresAt: user.resetPasswordOtpExpiresAt.toISOString(),
+      });
+    }
+
     const otp = generateOTP();
     user.resetPasswordOtp = otp;
     user.resetPasswordOtpExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
@@ -1874,6 +1892,14 @@ export const resetPassword = async (req, res) => {
     // Compare OTP
     if (user.resetPasswordOtp !== otp) {
       return res.status(400).json({ message: "Invalid reset code" });
+    }
+
+    // Check if new password is the same as current password
+    if (user.password) {
+      const isSamePassword = await bcrypt.compare(newPassword, user.password);
+      if (isSamePassword) {
+        return res.status(400).json({ message: "New password cannot be the same as your current password" });
+      }
     }
 
     // Hash the new password
