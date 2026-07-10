@@ -5,7 +5,8 @@ import Swipe from "../Models/swipe.schema.js";
 import Message from "../Models/message.schema.js";
 import Plan from "../Models/plan.schema.js";
 import Payment from "../Models/payment.schema.js";
-import { swipeUser, getLobbyChats, getChatMessages, sendChatMessage } from "../Controllers/user.controller.js";
+import { swipeUser, getLobbyChats, getChatMessages, sendChatMessage, getMe } from "../Controllers/user.controller.js";
+import { protect } from "../middleware/auth.middleware.js";
 
 dotenv.config();
 
@@ -581,6 +582,183 @@ async function runTests() {
     }
     console.log("✓ Subscriber sent chat message without decrementing compliments balance.");
     console.log("✓ Test Case 7 Passed! Chat message balance logic correctly verified.");
+  }
+
+  // -------------------------------------------------------------
+  // Test Case 8: Get Me and Pending Payment Check
+  // -------------------------------------------------------------
+  console.log("\n--- Running Test Case 8: Get Me and Pending Payment Check ---");
+  {
+    const userMe = await createTestUser("get_me@example.com");
+
+    // 1. Get Me without pendingOrderId
+    const reqMe1 = {
+      user: userMe,
+      query: {}
+    };
+    const resMe1 = makeRes();
+    await getMe(reqMe1, resMe1);
+    const resultMe1 = await resMe1.promise;
+
+    if (resultMe1.statusCode !== 200 || !resultMe1.body.status) {
+      throw new Error(`Expected status 200 and status: true, got ${resultMe1.statusCode}`);
+    }
+    if (resultMe1.body.paymentVerified !== false) {
+      throw new Error(`Expected paymentVerified to be false when no orderId is passed`);
+    }
+    console.log("✓ getMe endpoint returns user profile details successfully.");
+
+    // 2. Get Me with pendingOrderId that is not verified/nonexistent
+    const reqMe2 = {
+      user: userMe,
+      query: { pendingOrderId: "order_nonexistent" }
+    };
+    const resMe2 = makeRes();
+    await getMe(reqMe2, resMe2);
+    const resultMe2 = await resMe2.promise;
+    if (resultMe2.body.paymentVerified !== false) {
+      throw new Error(`Expected paymentVerified to be false for nonexistent orderId`);
+    }
+    console.log("✓ getMe endpoint correctly identifies nonexistent payment order.");
+
+    // 3. Create verified payment log and test check
+    await Payment.create({
+      user: userMe._id,
+      planId: "mana-drop",
+      razorpay_payment_id: "pay_xyz",
+      razorpay_order_id: "order_xyz",
+      razorpay_signature: "sig_xyz",
+      amount: 4900,
+      status: "verified"
+    });
+
+    const reqMe3 = {
+      user: userMe,
+      query: { pendingOrderId: "order_xyz" }
+    };
+    const resMe3 = makeRes();
+    await getMe(reqMe3, resMe3);
+    const resultMe3 = await resMe3.promise;
+    if (resultMe3.body.paymentVerified !== true) {
+      throw new Error(`Expected paymentVerified to be true for verified orderId`);
+    }
+    console.log("✓ getMe endpoint successfully verifies and confirms completed payment status.");
+    console.log("✓ Test Case 8 Passed! getMe and pending payment checks fully verified.");
+  }
+
+  // -------------------------------------------------------------
+  // Test Case 9: JWT Token Expiration and Auto-Logout
+  // -------------------------------------------------------------
+  console.log("\n--- Running Test Case 9: JWT Token Expiration and Auto-Logout ---");
+  {
+    const user = await createTestUser("jwt_test_user@example.com");
+
+    const jwt = (await import("jsonwebtoken")).default;
+
+    // 1. Create an expired token (expired 10 seconds ago)
+    const expiredToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "-10s" });
+
+    const req = {
+      headers: {
+        authorization: `Bearer ${expiredToken}`
+      }
+    };
+    const res = makeRes();
+    let nextCalled = false;
+    const next = () => { nextCalled = true; };
+
+    await protect(req, res, next);
+    const result = await res.promise;
+
+    if (nextCalled) {
+      throw new Error("Expected middleware protect to reject expired token, but next was called.");
+    }
+    if (result.statusCode !== 401) {
+      throw new Error(`Expected 401 Unauthorized for expired token, got status ${result.statusCode}`);
+    }
+    console.log("✓ Expired JWT token successfully rejected with 401 Unauthorized.");
+
+    // 2. Create a valid, unexpired token
+    const validToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+
+    const req2 = {
+      headers: {
+        authorization: `Bearer ${validToken}`
+      }
+    };
+    const res2 = makeRes();
+    let nextCalled2 = false;
+    const next2 = () => { nextCalled2 = true; };
+
+    await protect(req2, res2, next2);
+
+    if (!nextCalled2) {
+      throw new Error("Expected middleware protect to pass valid token, but next was not called.");
+    }
+    console.log("✓ Valid JWT token successfully passed the protect middleware.");
+    console.log("✓ Test Case 9 Passed! JWT token expiration rules fully verified.");
+  }
+
+  // -------------------------------------------------------------
+  // Test Case 10: Re-swiping on Previously Passed Users
+  // -------------------------------------------------------------
+  console.log("\n--- Running Test Case 10: Re-swiping on Previously Passed Users ---");
+  {
+    const swiper = await createTestUser("re_swiper@example.com");
+    const swipee = await createTestUser("re_swipee@example.com");
+
+    // 1. Create a "pass" swipe
+    const initialSwipe = new Swipe({
+      swiper: swiper._id,
+      swipee: swipee._id,
+      swipeType: "pass",
+      createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) // 4 days ago
+    });
+    await initialSwipe.save();
+
+    // 2. Try to swipe "like" on the same user (reusing the pass)
+    const reqSwipe = {
+      user: swiper,
+      body: {
+        swipeeId: swipee._id.toString(),
+        swipeType: "like"
+      }
+    };
+    const resSwipe = makeRes();
+    await swipeUser(reqSwipe, resSwipe);
+    const resultSwipe = await resSwipe.promise;
+
+    if (resultSwipe.statusCode !== 210 && resultSwipe.statusCode !== 201) {
+      throw new Error(`Expected swipe to succeed (201/210), got status ${resultSwipe.statusCode} and body: ${JSON.stringify(resultSwipe.body)}`);
+    }
+
+    // Verify database state has been updated
+    const updatedSwipe = await Swipe.findOne({ swiper: swiper._id, swipee: swipee._id });
+    if (!updatedSwipe) {
+      throw new Error("Expected swipe document to exist");
+    }
+    if (updatedSwipe.swipeType !== "like") {
+      throw new Error(`Expected swipeType to be updated to 'like', got '${updatedSwipe.swipeType}'`);
+    }
+    console.log("✓ Successfully swiped 'like' on a user who was previously passed.");
+
+    // 3. Try to swipe again (now that it is a 'like')
+    const reqSwipeAgain = {
+      user: swiper,
+      body: {
+        swipeeId: swipee._id.toString(),
+        swipeType: "pass"
+      }
+    };
+    const resSwipeAgain = makeRes();
+    await swipeUser(reqSwipeAgain, resSwipeAgain);
+    const resultSwipeAgain = await resSwipeAgain.promise;
+
+    if (resultSwipeAgain.statusCode !== 400 || resultSwipeAgain.body.message !== "You have already swiped on this user") {
+      throw new Error(`Expected 400 'You have already swiped on this user' for already liked user, got status ${resultSwipeAgain.statusCode} and body: ${JSON.stringify(resultSwipeAgain.body)}`);
+    }
+    console.log("✓ Duplicate swipe 'pass' on already liked user correctly blocked.");
+    console.log("✓ Test Case 10 Passed! Old passes can be safely swiped again.");
   }
 
   console.log("\n=================================");

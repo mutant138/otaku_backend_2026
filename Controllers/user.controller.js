@@ -1119,7 +1119,13 @@ export const swipeUser = async (req, res) => {
     // Check if already swiped on this user
     const existingSwipe = await Swipe.findOne({ swiper: swiperId, swipee: swipeeId });
     if (existingSwipe) {
-      return res.status(400).json({ status: false, message: "You have already swiped on this user" });
+      if (existingSwipe.swipeType === "pass") {
+        // Reuse the existing pass swipe and update it later
+        existingSwipe.swipeType = swipeType;
+        existingSwipe.createdAt = new Date();
+      } else {
+        return res.status(400).json({ status: false, message: "You have already swiped on this user" });
+      }
     }
 
     const user = req.user;
@@ -1167,13 +1173,17 @@ export const swipeUser = async (req, res) => {
       });
     }
 
-    // Record swipe
-    const newSwipe = new Swipe({
-      swiper: swiperId,
-      swipee: swipeeId,
-      swipeType,
-    });
-    await newSwipe.save();
+    // Record/update swipe
+    if (existingSwipe) {
+      await existingSwipe.save();
+    } else {
+      const newSwipe = new Swipe({
+        swiper: swiperId,
+        swipee: swipeeId,
+        swipeType,
+      });
+      await newSwipe.save();
+    }
 
     // Hook for Welcome Bot instant match response (Strategy 4)
     if (swipee.isBot && ["like", "super"].includes(swipeType)) {
@@ -1934,6 +1944,116 @@ export const resetPassword = async (req, res) => {
 };
 
 /**
+ * Retrieve current authenticated user's private profile details.
+ * Route: GET /api/user/me
+ */
+export const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ status: false, message: "User not found" });
+    }
+
+    const { pendingOrderId, pendingPlanId } = req.query;
+    let paymentVerified = false;
+    let updatedUser = user;
+
+    if (pendingOrderId) {
+      const existingPayment = await Payment.exists({
+        razorpay_order_id: pendingOrderId,
+        status: "verified"
+      });
+
+      if (existingPayment) {
+        paymentVerified = true;
+      } else if (pendingPlanId) {
+        // Fetch order details from Razorpay to verify on the fly
+        const razorpay = new Razorpay({
+          key_id: process.env.RAZORPAY_KEY_ID,
+          key_secret: process.env.RAZORPAY_KEY_SECRET,
+        });
+
+        try {
+          const payments = await razorpay.orders.fetchPayments(pendingOrderId);
+          const capturedPayment = payments.items?.find(p => p.status === "captured");
+          
+          if (capturedPayment) {
+            const plan = await Plan.findOne({ planId: pendingPlanId });
+            if (plan) {
+              // Apply provisioning logic
+              const isGirl = user.gender && ["female", "girl", "woman"].includes(user.gender.toLowerCase().trim());
+              const multiplier = isGirl ? 2 : 1;
+
+              const complimentsAdded = plan.complimentsRefill * multiplier;
+              user.complimentsBalance = (user.complimentsBalance !== undefined ? user.complimentsBalance : 1) + complimentsAdded;
+
+              let extraSwipesAdded = 0;
+              if (plan.planId === "mana-drop") {
+                extraSwipesAdded = 15 * multiplier;
+                user.extraSwipesBalance = (user.extraSwipesBalance || 0) + extraSwipesAdded;
+              }
+
+              let superLikesAdded = 0;
+              if (plan.planId === "mana-drop") {
+                superLikesAdded = 1 * multiplier;
+              } else if (plan.planId === "power-surge") {
+                superLikesAdded = 3 * multiplier;
+              } else if (plan.planId === "otaku-pass") {
+                superLikesAdded = 5 * multiplier;
+              }
+              user.superLikesBalance = (user.superLikesBalance !== undefined ? user.superLikesBalance : 1) + superLikesAdded;
+
+              if (plan.isPremium) {
+                user.isPremium = true;
+              }
+
+              if (plan.type === "subscription" && plan.durationDays > 0) {
+                const purchasedAt = new Date();
+                const expiresAt = new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000);
+                user.activeSubscription = {
+                  plan: plan._id,
+                  planId: plan.planId,
+                  purchasedAt,
+                  expiresAt,
+                };
+              }
+
+              await user.save();
+              updatedUser = user;
+
+              // Store payment log
+              const paymentLog = new Payment({
+                user: user._id,
+                planId: pendingPlanId,
+                razorpay_payment_id: capturedPayment.id,
+                razorpay_order_id: pendingOrderId,
+                razorpay_signature: "api_verified",
+                amount: plan.price * 100,
+                status: "verified",
+              });
+              await paymentLog.save();
+
+              paymentVerified = true;
+            }
+          }
+        } catch (err) {
+          console.error("Razorpay verification inside getMe failed:", err);
+        }
+      }
+    }
+
+    return res.status(200).json({
+      status: true,
+      user: buildUserResponse(updatedUser),
+      paymentVerified
+    });
+  } catch (error) {
+    console.error("Get Me Error:", error);
+    return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+/**
  * Retrieve public profile details for a specific user.
  * Route: GET /api/user/profile/:id
  * 
@@ -1994,4 +2114,5 @@ export default {
   forgotPassword,
   resetPassword,
   getUserProfile,
+  getMe,
 };

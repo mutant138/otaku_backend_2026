@@ -6,7 +6,12 @@ import { sendEmail } from "./email.js";
 export const ensureWelcomeBot = async () => {
   try {
     const BOT_USERNAME = "JarvisChan";
-    const bot = await User.findOne({ username: BOT_USERNAME });
+    const bot = await User.findOne({
+      $or: [
+        { username: BOT_USERNAME },
+        { email: "jarvischan@otakuduo.com" }
+      ]
+    });
     if (!bot) {
       console.log("Seeding Welcome AI Bot...");
       await User.create({
