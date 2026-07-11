@@ -265,6 +265,15 @@ export const registerUser = async (req, res) => {
 
       // User exists but is NOT verified — allow them to update details and re-request OTP
       if (!user.isVerified) {
+        if (user.otp && user.otpExpiresAt && user.otpExpiresAt > new Date()) {
+          return res.status(200).json({
+            message: "OTP already sent. Please check your email.",
+            status: true,
+            email: user.email,
+            otpExpiresAt: user.otpExpiresAt.toISOString(),
+          });
+        }
+
         const salt = await bcrypt.genSalt(10);
         user.password = await bcrypt.hash(password, salt);
         user.fullname = fullname.trim();
@@ -443,6 +452,12 @@ export const resendOtp = async (req, res) => {
 
     if (user.isVerified) {
       return res.status(400).json({ message: "Email is already verified. Please log in." });
+    }
+
+    if (user.otp && user.otpExpiresAt && user.otpExpiresAt > new Date()) {
+      return res.status(400).json({
+        message: "An active OTP is already sent. Please check your email or wait before resending.",
+      });
     }
 
     const otp = generateOTP();
