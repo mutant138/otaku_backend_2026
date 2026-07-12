@@ -1,3 +1,5 @@
+import { validatePassword } from "../utils/passwordValidator.js";
+
 export const checkEmailSchema = {
   email: { type: "email", required: true },
 };
@@ -5,7 +7,11 @@ export const checkEmailSchema = {
 export const registerSchema = {
   fullname: { type: "string", required: true },
   email: { type: "email", required: true },
-  password: { type: "string", required: true },
+  password: {
+    type: "string",
+    required: true,
+    validate: (value, body) => validatePassword(value, body),
+  },
 };
 
 export const verifyOtpSchema = {
@@ -29,7 +35,11 @@ export const forgotPasswordSchema = {
 export const resetPasswordSchema = {
   email: { type: "email", required: true },
   otp: { type: "string", required: true },
-  newPassword: { type: "string", required: true },
+  newPassword: {
+    type: "string",
+    required: true,
+    validate: (value, body) => validatePassword(value, body),
+  },
 };
 
 export const oauthSchema = {
