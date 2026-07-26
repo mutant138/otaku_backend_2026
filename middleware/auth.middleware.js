@@ -22,12 +22,29 @@ export const protect = async (req, res, next) => {
 };
 
 export const requireOnboarded = (req, res, next) => {
-    if (!req.user || !req.user.isOnboarded) {
-        return res.status(403).json({
+    const user = req.user;
+
+    if (!user) {
+        return res.status(401).json({
             status: false,
-            message: "Onboarding is required to perform this action."
+            message: "Unauthorized."
         });
     }
+
+    const preferences = user.preferences || {};
+
+    const hasPreferences =
+        (preferences.animeGenres?.length || 0) > 0 ||
+        (preferences.gameGenres?.length || 0) > 0 ||
+        (preferences.animeFavorites?.length || 0) > 0 ||
+        (preferences.gameFavorites?.length || 0) > 0;
+    
+    if (!user.isOnboarded || !hasPreferences) {
+        return res.status(403).json({
+            status: false,
+            message: "Complete onboarding before performing this action."
+        });
+    }
+
     next();
 };
-

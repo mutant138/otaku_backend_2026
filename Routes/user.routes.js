@@ -37,7 +37,7 @@ router.post("/onboard", authMiddleware.protect, validate(onboardSchema), userCon
 router.get("/generate-username", authMiddleware.protect, userController.generateUsername);
 router.get("/metadata", authMiddleware.protect, userController.getMetadata);
 router.get("/me", authMiddleware.protect, userController.getMe);
-router.put("/update-profile", authMiddleware.protect, authMiddleware.requireOnboarded, validate(updateProfileSchema), userController.updateProfile);
+router.put("/update-profile", authMiddleware.protect, validate(updateProfileSchema), userController.updateProfile);
 router.post("/upload-avatar", authMiddleware.protect, upload.single("avatar"), userController.uploadAvatar);
 router.post("/upload-photo", authMiddleware.protect, upload.single("photo"), userController.uploadPhoto);
 router.delete("/delete-photo", authMiddleware.protect, validate(deletePhotoSchema), userController.deletePhoto);

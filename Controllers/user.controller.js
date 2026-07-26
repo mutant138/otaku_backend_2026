@@ -529,6 +529,15 @@ export const loginUser = async (req, res) => {
 
     // Check if the user is verified; if not, do OTP verification
     if (!user.isVerified) {
+      if (user.otp && user.otpExpiresAt && user.otpExpiresAt > new Date()) {
+        return res.status(200).json({
+          message: "OTP already sent. Please check your email.",
+          requiresOtp: true,
+          email: user.email,
+          otpExpiresAt: user.otpExpiresAt.toISOString(),
+        });
+      }
+
       const otp = generateOTP();
       user.otp = otp;
       user.otpExpiresAt = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
@@ -963,6 +972,10 @@ export const deletePhoto = async (req, res) => {
       return res.status(400).json({ status: false, message: "Photo URL is required" });
     }
 
+    if (user.isOnboarded && user.profilePics.length <= 1 && user.profilePics.includes(photoUrl)) {
+      return res.status(400).json({ status: false, message: "You must keep at least one profile photo." });
+    }
+
     user.profilePics = user.profilePics.filter(pic => pic !== photoUrl);
     await user.save();
 
@@ -1047,8 +1060,14 @@ export const getCandidates = async (req, res) => {
       createdAt: { $gte: threeDaysAgo }
     }).distinct("swipee");
 
-    // Combine permanent exclusions and recent passes
-    const excludedUserIds = [...new Set([...permanentExcludes, ...recentPasses])];
+    // Find users whom this user has reported, or who have reported this user
+    const [reportedByMe, reportedMe] = await Promise.all([
+      Report.find({ reporter: currentUserId }).distinct("reportedUser"),
+      Report.find({ reportedUser: currentUserId }).distinct("reporter")
+    ]);
+
+    // Combine permanent exclusions, recent passes, and reports
+    const excludedUserIds = [...new Set([...permanentExcludes, ...recentPasses, ...reportedByMe, ...reportedMe])];
 
     // Construct query based on logged-in user's preference path (anime/game/both)
     const userPath = req.user.preferences?.path || "both";
@@ -1274,6 +1293,12 @@ export const reportUser = async (req, res) => {
 
     if (!reportedUserId || !reason) {
       return res.status(400).json({ status: false, message: "Reported user ID and reason are required" });
+    }
+
+    // Check for duplicate reports
+    const existingReport = await Report.findOne({ reporter, reportedUser: reportedUserId });
+    if (existingReport) {
+      return res.status(400).json({ status: false, message: "You have already reported this user" });
     }
 
     const report = new Report({
