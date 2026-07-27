@@ -110,7 +110,6 @@ const userSchema = new mongoose.Schema({
   lookingFor: { type: String, trim: true },
   kids: { type: String, trim: true },
   politics: { type: String, trim: true },
-  religion: { type: String, trim: true },
   discord: { type: String, trim: true },
   instagram: { type: String, trim: true },
   preferences: {

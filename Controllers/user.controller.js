@@ -118,7 +118,6 @@ function buildUserResponse(user) {
     lookingFor: user.lookingFor || "",
     kids: user.kids || "",
     politics: user.politics || "",
-    religion: user.religion || "",
     discord: user.discord || "",
     instagram: user.instagram || "",
     complimentsBalance: user.complimentsBalance !== undefined ? user.complimentsBalance : 1,
@@ -168,7 +167,6 @@ function buildPublicUserResponse(user) {
     lookingFor: user.lookingFor || "",
     kids: user.kids || "",
     politics: user.politics || "",
-    religion: user.religion || "",
     discord: user.discord || "",
     instagram: user.instagram || "",
     synergy: user.synergy || 0,
@@ -801,7 +799,7 @@ export const updateProfile = async (req, res) => {
 
     const {
       fullname, email, gender, age, location, locationDetails, bio, username,
-      height, weight, education, drinking, smoking, lookingFor, kids, politics, religion, discord, instagram
+      height, weight, education, drinking, smoking, lookingFor, kids, politics, discord, instagram
     } = req.body;
 
     if (email && email.toLowerCase().trim() !== user.email) {
@@ -856,7 +854,6 @@ export const updateProfile = async (req, res) => {
     user.lookingFor = lookingFor !== undefined ? lookingFor.trim() : user.lookingFor;
     user.kids = kids !== undefined ? kids.trim() : user.kids;
     user.politics = politics !== undefined ? politics.trim() : user.politics;
-    user.religion = religion !== undefined ? religion.trim() : user.religion;
     user.discord = discord !== undefined ? discord.trim() : user.discord;
     user.instagram = instagram !== undefined ? instagram.trim() : user.instagram;
 
@@ -1084,7 +1081,7 @@ export const getCandidates = async (req, res) => {
 
     // Find candidates matching the query with a limit of 40 to optimize database load
     const users = await User.find(query)
-      .select("username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics religion isPremium activeSubscription userId")
+      .select("username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics isPremium activeSubscription userId")
       .limit(40);
     
     const hasSubscription = req.user.activeSubscription &&
@@ -1546,7 +1543,7 @@ export const getLobbyLikes = async (req, res) => {
       swipee: currentUserId,
       swiper: { $nin: swipedUserIds },
       swipeType: { $in: ["like", "super"] }
-    }).populate("swiper", "username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics religion isPremium activeSubscription userId");
+    }).populate("swiper", "username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics isPremium activeSubscription userId");
 
     const likes = likedSwipes.map(s => {
       const userRes = buildPublicUserResponse(s.swiper);
@@ -1593,7 +1590,7 @@ export const getLobbyChats = async (req, res) => {
     // 3. Construct channels details
     const channels = [];
     for (const userId of allChannelUserIds) {
-      const otherUser = await User.findById(userId).select("username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics religion isPremium activeSubscription userId");
+      const otherUser = await User.findById(userId).select("username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics isPremium activeSubscription userId");
       if (!otherUser) continue;
 
       const latestMessage = await Message.findOne({

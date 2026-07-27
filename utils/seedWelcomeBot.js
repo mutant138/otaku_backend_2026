@@ -45,7 +45,6 @@ export const ensureWelcomeBot = async () => {
         drinking: "No",
         smoking: "No",
         lookingFor: "Chat and friendship",
-        religion: "None",
         discord: "jarvis_chan",
         instagram: "jarvis_chan_ai",
         isPremium: true
