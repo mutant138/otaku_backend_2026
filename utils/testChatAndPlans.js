@@ -5,8 +5,12 @@ import Swipe from "../Models/swipe.schema.js";
 import Message from "../Models/message.schema.js";
 import Plan from "../Models/plan.schema.js";
 import Payment from "../Models/payment.schema.js";
-import { swipeUser, getLobbyChats, getChatMessages, sendChatMessage, getMe } from "../Controllers/user.controller.js";
+import crypto from "crypto";
+import { swipeUser, getLobbyChats, getChatMessages, sendChatMessage, getMe, handleRazorpayWebhook } from "../Controllers/user.controller.js";
 import { protect } from "../middleware/auth.middleware.js";
+
+import dns from "dns";
+dns.setServers(["1.1.1.1", "1.0.0.1"]);
 
 dotenv.config();
 
@@ -759,6 +763,95 @@ async function runTests() {
     }
     console.log("✓ Duplicate swipe 'pass' on already liked user correctly blocked.");
     console.log("✓ Test Case 10 Passed! Old passes can be safely swiped again.");
+  }
+
+  // -------------------------------------------------------------
+  // Test Case 11: Razorpay Webhook Payment & Subscription Fulfillment
+  // -------------------------------------------------------------
+  console.log("\n--- Running Test Case 11: Razorpay Webhook Payment & Subscription Fulfillment ---");
+  {
+    const webhookUser = await createTestUser("webhook_test@example.com");
+    webhookUser.gender = "female"; // Girl user gets 2x bonus multiplier
+    await webhookUser.save();
+
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "otaku_razorpay_webhook_secret_2026";
+    const paymentId = `pay_wh_${Date.now()}`;
+    const orderId = `order_wh_${Date.now()}`;
+
+    // 1. Invalid Signature Test
+    const invalidPayload = { event: "payment.captured", payload: {} };
+    const reqInvalid = {
+      headers: { "x-razorpay-signature": "invalid_sig_123" },
+      body: invalidPayload,
+      rawBody: Buffer.from(JSON.stringify(invalidPayload))
+    };
+    const resInvalid = makeRes();
+    await handleRazorpayWebhook(reqInvalid, resInvalid);
+    const resultInvalid = await resInvalid.promise;
+
+    if (resultInvalid.statusCode !== 400 || resultInvalid.body.message !== "Webhook signature verification failed") {
+      throw new Error(`Expected 400 Webhook signature verification failed, got status ${resultInvalid.statusCode}`);
+    }
+    console.log("✓ Razorpay webhook correctly rejects invalid signatures.");
+
+    // 2. Valid Webhook Event Fulfills Subscription
+    const validPayload = {
+      event: "payment.captured",
+      payload: {
+        payment: {
+          entity: {
+            id: paymentId,
+            order_id: orderId,
+            amount: 14300,
+            notes: {
+              userId: webhookUser._id.toString(),
+              planId: "otaku-pass"
+            }
+          }
+        }
+      }
+    };
+
+    const rawBodyBuffer = Buffer.from(JSON.stringify(validPayload));
+    const validSignature = crypto
+      .createHmac("sha256", webhookSecret)
+      .update(rawBodyBuffer)
+      .digest("hex");
+
+    const reqValid = {
+      headers: { "x-razorpay-signature": validSignature },
+      body: validPayload,
+      rawBody: rawBodyBuffer
+    };
+    const resValid = makeRes();
+    await handleRazorpayWebhook(reqValid, resValid);
+    const resultValid = await resValid.promise;
+
+    if (resultValid.statusCode !== 200 || !resultValid.body.status) {
+      throw new Error(`Expected 200 and status: true, got ${resultValid.statusCode} body: ${JSON.stringify(resultValid.body)}`);
+    }
+    console.log("✓ Razorpay webhook processed payment.captured event successfully.");
+
+    // Verify User State in DB
+    const updatedWebhookUser = await User.findById(webhookUser._id);
+    if (!updatedWebhookUser.isPremium) {
+      throw new Error("Expected user.isPremium to be true after otaku-pass webhook fulfillment");
+    }
+    if (!updatedWebhookUser.activeSubscription || updatedWebhookUser.activeSubscription.planId !== "otaku-pass") {
+      throw new Error("Expected activeSubscription.planId to be 'otaku-pass'");
+    }
+    console.log("✓ Subscription benefits (Otaku Pass, isPremium, activeSubscription) accurately fulfilled via Webhook.");
+
+    // 3. Idempotency Check (Resent Webhook)
+    const resDuplicate = makeRes();
+    await handleRazorpayWebhook(reqValid, resDuplicate);
+    const resultDuplicate = await resDuplicate.promise;
+
+    if (resultDuplicate.statusCode !== 200 || resultDuplicate.body.message !== "Payment already processed and verified.") {
+      throw new Error(`Expected idempotent acknowledgment, got ${JSON.stringify(resultDuplicate.body)}`);
+    }
+    console.log("✓ Duplicate Webhook events safely handled without double-crediting.");
+    console.log("✓ Test Case 11 Passed! Razorpay Webhook integration fully verified.");
   }
 
   console.log("\n=================================");

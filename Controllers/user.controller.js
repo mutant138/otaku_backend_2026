@@ -1411,6 +1411,10 @@ export const createOrder = async (req, res) => {
       amount,
       currency: "INR",
       receipt: `receipt_order_${Date.now()}`,
+      notes: {
+        userId: req.user._id.toString(),
+        planId: planId,
+      },
     };
 
     const order = await razorpay.orders.create(options);
@@ -1429,6 +1433,55 @@ export const createOrder = async (req, res) => {
     console.error("Create Order Error:", error);
     return res.status(500).json({ status: false, message: "Internal server error" });
   }
+};
+
+/**
+ * Helper function to apply subscription plan benefits to a user.
+ */
+export const fulfillSubscriptionPlan = (user, plan) => {
+  const isGirl = user.gender && ["female", "girl", "woman"].includes(user.gender.toLowerCase().trim());
+  const multiplier = isGirl ? 2 : 1;
+
+  // Apply compliments refill
+  const complimentsAdded = (plan.complimentsRefill || 0) * multiplier;
+  user.complimentsBalance = (user.complimentsBalance !== undefined ? user.complimentsBalance : 1) + complimentsAdded;
+
+  // Apply extra swipes if any
+  let extraSwipesAdded = 0;
+  if (plan.planId === "mana-drop") {
+    extraSwipesAdded = 15 * multiplier;
+    user.extraSwipesBalance = (user.extraSwipesBalance || 0) + extraSwipesAdded;
+  }
+
+  // Apply super likes if any
+  let superLikesAdded = 0;
+  if (plan.planId === "mana-drop") {
+    superLikesAdded = 1 * multiplier;
+  } else if (plan.planId === "power-surge") {
+    superLikesAdded = 3 * multiplier;
+  } else if (plan.planId === "otaku-pass") {
+    superLikesAdded = 5 * multiplier;
+  }
+  user.superLikesBalance = (user.superLikesBalance !== undefined ? user.superLikesBalance : 1) + superLikesAdded;
+
+  // Apply premium features if plan grants them
+  if (plan.isPremium) {
+    user.isPremium = true;
+  }
+
+  // Record subscription limits if it's a subscription type
+  if (plan.type === "subscription" && plan.durationDays > 0) {
+    const purchasedAt = new Date();
+    const expiresAt = new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000);
+    user.activeSubscription = {
+      plan: plan._id,
+      planId: plan.planId,
+      purchasedAt,
+      expiresAt,
+    };
+  }
+
+  return user;
 };
 
 export const verifyPayment = async (req, res) => {
@@ -1463,49 +1516,8 @@ export const verifyPayment = async (req, res) => {
 
     const user = req.user;
     
-    // Determine if user is a girl
-    const isGirl = user.gender && ["female", "girl", "woman"].includes(user.gender.toLowerCase().trim());
-    const multiplier = isGirl ? 2 : 1;
-
-    // Apply compliments refill
-    const complimentsAdded = plan.complimentsRefill * multiplier;
-    user.complimentsBalance = (user.complimentsBalance !== undefined ? user.complimentsBalance : 1) + complimentsAdded;
-
-    // Apply extra swipes if any
-    let extraSwipesAdded = 0;
-    if (plan.planId === "mana-drop") {
-      extraSwipesAdded = 15 * multiplier;
-      user.extraSwipesBalance = (user.extraSwipesBalance || 0) + extraSwipesAdded;
-    }
-
-    // Apply super likes if any
-    let superLikesAdded = 0;
-    if (plan.planId === "mana-drop") {
-      superLikesAdded = 1 * multiplier;
-    } else if (plan.planId === "power-surge") {
-      superLikesAdded = 3 * multiplier;
-    } else if (plan.planId === "otaku-pass") {
-      superLikesAdded = 5 * multiplier;
-    }
-    user.superLikesBalance = (user.superLikesBalance !== undefined ? user.superLikesBalance : 1) + superLikesAdded;
-
-    // Apply premium features if plan grants them
-    if (plan.isPremium) {
-      user.isPremium = true;
-    }
-
-    // Record subscription limits if it's a subscription type
-    if (plan.type === "subscription" && plan.durationDays > 0) {
-      const purchasedAt = new Date();
-      const expiresAt = new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000);
-      user.activeSubscription = {
-        plan: plan._id,
-        planId: plan.planId,
-        purchasedAt,
-        expiresAt,
-      };
-    }
-
+    // Fulfill subscription plan benefits
+    fulfillSubscriptionPlan(user, plan);
     await user.save();
 
     // Store payment transaction in MongoDB
@@ -1527,6 +1539,101 @@ export const verifyPayment = async (req, res) => {
     });
   } catch (error) {
     console.error("Verify Payment Error:", error);
+    return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * Handle incoming Razorpay Webhook notifications for payments and subscriptions.
+ * Route: POST /api/user/razorpay-webhook
+ */
+export const handleRazorpayWebhook = async (req, res) => {
+  try {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "otaku_razorpay_webhook_secret_2026";
+    const signature = req.headers["x-razorpay-signature"];
+
+    if (!signature) {
+      return res.status(400).json({ status: false, message: "Missing Razorpay webhook signature header" });
+    }
+
+    // Get raw body buffer for HMAC verification
+    const rawBody = req.rawBody
+      ? req.rawBody
+      : (typeof req.body === "string" ? Buffer.from(req.body) : Buffer.from(JSON.stringify(req.body)));
+
+    const expectedSignature = crypto
+      .createHmac("sha256", webhookSecret)
+      .update(rawBody)
+      .digest("hex");
+
+    const expectedBuffer = Buffer.from(expectedSignature, "utf8");
+    const signatureBuffer = Buffer.from(signature, "utf8");
+
+    if (
+      expectedBuffer.length !== signatureBuffer.length ||
+      !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)
+    ) {
+      return res.status(400).json({ status: false, message: "Webhook signature verification failed" });
+    }
+
+    const payload = req.body;
+    const event = payload?.event;
+    console.log(`[Razorpay Webhook] Received event: ${event}`);
+
+    // Process payment capture, order paid, or subscription charged events
+    if (["payment.captured", "order.paid", "subscription.charged"].includes(event)) {
+      const paymentEntity = payload.payload?.payment?.entity || {};
+      const orderEntity = payload.payload?.order?.entity || {};
+
+      const razorpay_payment_id = paymentEntity.id || payload.payload?.payment_id || `webhook_${Date.now()}`;
+      const razorpay_order_id = paymentEntity.order_id || orderEntity.id;
+      const notes = paymentEntity.notes || orderEntity.notes || {};
+
+      const userId = notes.userId;
+      const planId = notes.planId;
+
+      // Idempotency check: verify if payment was already recorded
+      let existingPayment = null;
+      if (razorpay_payment_id) {
+        existingPayment = await Payment.findOne({ razorpay_payment_id, status: "verified" });
+      }
+      if (!existingPayment && razorpay_order_id) {
+        existingPayment = await Payment.findOne({ razorpay_order_id, status: "verified" });
+      }
+
+      if (existingPayment) {
+        return res.status(200).json({ status: true, message: "Payment already processed and verified." });
+      }
+
+      if (!userId || !planId) {
+        return res.status(200).json({ status: true, message: "Webhook received but missing order notes (userId / planId)" });
+      }
+
+      const user = await User.findById(userId);
+      const plan = await Plan.findOne({ planId });
+
+      if (user && plan) {
+        fulfillSubscriptionPlan(user, plan);
+        await user.save();
+
+        const paymentLog = new Payment({
+          user: user._id,
+          planId: plan.planId,
+          razorpay_payment_id,
+          razorpay_order_id: razorpay_order_id || `order_wh_${Date.now()}`,
+          razorpay_signature: signature,
+          amount: paymentEntity.amount || (plan.price * 100),
+          status: "verified",
+        });
+        await paymentLog.save();
+
+        return res.status(200).json({ status: true, message: "Webhook payment fulfilled successfully!" });
+      }
+    }
+
+    return res.status(200).json({ status: true, message: "Webhook event acknowledged" });
+  } catch (error) {
+    console.error("Razorpay Webhook Error:", error);
     return res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
@@ -2017,44 +2124,8 @@ export const getMe = async (req, res) => {
           if (capturedPayment) {
             const plan = await Plan.findOne({ planId: pendingPlanId });
             if (plan) {
-              // Apply provisioning logic
-              const isGirl = user.gender && ["female", "girl", "woman"].includes(user.gender.toLowerCase().trim());
-              const multiplier = isGirl ? 2 : 1;
-
-              const complimentsAdded = plan.complimentsRefill * multiplier;
-              user.complimentsBalance = (user.complimentsBalance !== undefined ? user.complimentsBalance : 1) + complimentsAdded;
-
-              let extraSwipesAdded = 0;
-              if (plan.planId === "mana-drop") {
-                extraSwipesAdded = 15 * multiplier;
-                user.extraSwipesBalance = (user.extraSwipesBalance || 0) + extraSwipesAdded;
-              }
-
-              let superLikesAdded = 0;
-              if (plan.planId === "mana-drop") {
-                superLikesAdded = 1 * multiplier;
-              } else if (plan.planId === "power-surge") {
-                superLikesAdded = 3 * multiplier;
-              } else if (plan.planId === "otaku-pass") {
-                superLikesAdded = 5 * multiplier;
-              }
-              user.superLikesBalance = (user.superLikesBalance !== undefined ? user.superLikesBalance : 1) + superLikesAdded;
-
-              if (plan.isPremium) {
-                user.isPremium = true;
-              }
-
-              if (plan.type === "subscription" && plan.durationDays > 0) {
-                const purchasedAt = new Date();
-                const expiresAt = new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000);
-                user.activeSubscription = {
-                  plan: plan._id,
-                  planId: plan.planId,
-                  purchasedAt,
-                  expiresAt,
-                };
-              }
-
+              // Apply provisioning logic using helper
+              fulfillSubscriptionPlan(user, plan);
               await user.save();
               updatedUser = user;
 
@@ -2142,6 +2213,8 @@ export default {
   reportUser,
   createOrder,
   verifyPayment,
+  handleRazorpayWebhook,
+  fulfillSubscriptionPlan,
   getPlans,
   getLobbyLikes,
   getLobbyChats,

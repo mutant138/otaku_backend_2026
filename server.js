@@ -42,7 +42,11 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
 
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Custom middleware to sanitize inputs and prevent NoSQL query injection (in-place mutation to support Express 5 query getters)

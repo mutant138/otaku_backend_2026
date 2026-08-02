@@ -46,6 +46,7 @@ router.post("/swipe", authMiddleware.protect, authMiddleware.requireOnboarded, v
 router.post("/report", authMiddleware.protect, authMiddleware.requireOnboarded, userController.reportUser);
 router.post("/create-order", authMiddleware.protect, validate(createOrderSchema), userController.createOrder);
 router.post("/verify-payment", authMiddleware.protect, validate(verifyPaymentSchema), userController.verifyPayment);
+router.post("/razorpay-webhook", userController.handleRazorpayWebhook);
 router.post("/redeem-plan", authMiddleware.protect, validate(redeemPlanSchema), userController.redeemPlan);
 router.get("/plans", authMiddleware.protect, userController.getPlans);
 router.get("/lobby/likes", authMiddleware.protect, authMiddleware.requireOnboarded, userController.getLobbyLikes);
