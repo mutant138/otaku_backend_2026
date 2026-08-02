@@ -1422,6 +1422,18 @@ export const createOrder = async (req, res) => {
       return res.status(500).json({ status: false, message: "Failed to create Razorpay order" });
     }
 
+    // Save pending payment record in DB so server can track processing status even if client localStorage is cleared
+    const paymentLog = new Payment({
+      user: req.user._id,
+      planId,
+      razorpay_payment_id: `pending_${order.id}`,
+      razorpay_order_id: order.id,
+      razorpay_signature: "pending",
+      amount,
+      status: "created",
+    });
+    await paymentLog.save();
+
     return res.status(201).json({
       status: true,
       order_id: order.id,
@@ -1520,17 +1532,25 @@ export const verifyPayment = async (req, res) => {
     fulfillSubscriptionPlan(user, plan);
     await user.save();
 
-    // Store payment transaction in MongoDB
-    const paymentLog = new Payment({
-      user: user._id,
-      planId,
-      razorpay_payment_id,
-      razorpay_order_id,
-      razorpay_signature,
-      amount: plan.price * 100,
-      status: "verified",
-    });
-    await paymentLog.save();
+    // Store/update payment transaction in MongoDB
+    let paymentLog = await Payment.findOne({ razorpay_order_id });
+    if (paymentLog) {
+      paymentLog.razorpay_payment_id = razorpay_payment_id;
+      paymentLog.razorpay_signature = razorpay_signature;
+      paymentLog.status = "verified";
+      await paymentLog.save();
+    } else {
+      paymentLog = new Payment({
+        user: user._id,
+        planId,
+        razorpay_payment_id,
+        razorpay_order_id,
+        razorpay_signature,
+        amount: plan.price * 100,
+        status: "verified",
+      });
+      await paymentLog.save();
+    }
 
     return res.status(200).json({
       status: true,
@@ -1580,14 +1600,15 @@ export const handleRazorpayWebhook = async (req, res) => {
     const event = payload?.event;
     console.log(`[Razorpay Webhook] Received event: ${event}`);
 
-    // Process payment capture, order paid, or subscription charged events
-    if (["payment.captured", "order.paid", "subscription.charged"].includes(event)) {
+    // Process payment capture/authorization, order paid, or subscription charged/authenticated events
+    if (["payment.captured", "payment.authorized", "order.paid", "subscription.charged", "subscription.authenticated"].includes(event)) {
       const paymentEntity = payload.payload?.payment?.entity || {};
       const orderEntity = payload.payload?.order?.entity || {};
+      const subscriptionEntity = payload.payload?.subscription?.entity || {};
 
       const razorpay_payment_id = paymentEntity.id || payload.payload?.payment_id || `webhook_${Date.now()}`;
-      const razorpay_order_id = paymentEntity.order_id || orderEntity.id;
-      const notes = paymentEntity.notes || orderEntity.notes || {};
+      const razorpay_order_id = paymentEntity.order_id || orderEntity.id || subscriptionEntity.id;
+      const notes = paymentEntity.notes || orderEntity.notes || subscriptionEntity.notes || {};
 
       const userId = notes.userId;
       const planId = notes.planId;
@@ -1616,19 +1637,60 @@ export const handleRazorpayWebhook = async (req, res) => {
         fulfillSubscriptionPlan(user, plan);
         await user.save();
 
-        const paymentLog = new Payment({
-          user: user._id,
-          planId: plan.planId,
-          razorpay_payment_id,
-          razorpay_order_id: razorpay_order_id || `order_wh_${Date.now()}`,
-          razorpay_signature: signature,
-          amount: paymentEntity.amount || (plan.price * 100),
-          status: "verified",
-        });
-        await paymentLog.save();
+        let paymentLog = await Payment.findOne({ razorpay_order_id });
+        if (paymentLog) {
+          paymentLog.razorpay_payment_id = razorpay_payment_id;
+          paymentLog.razorpay_signature = signature;
+          paymentLog.status = "verified";
+          await paymentLog.save();
+        } else {
+          paymentLog = new Payment({
+            user: user._id,
+            planId: plan.planId,
+            razorpay_payment_id,
+            razorpay_order_id: razorpay_order_id || `order_wh_${Date.now()}`,
+            razorpay_signature: signature,
+            amount: paymentEntity.amount || (plan.price * 100),
+            status: "verified",
+          });
+          await paymentLog.save();
+        }
 
         return res.status(200).json({ status: true, message: "Webhook payment fulfilled successfully!" });
       }
+    } else if (["subscription.cancelled", "subscription.halted"].includes(event)) {
+      const subscriptionEntity = payload.payload?.subscription?.entity || {};
+      const notes = subscriptionEntity.notes || {};
+      const userId = notes.userId;
+
+      if (userId) {
+        const user = await User.findById(userId);
+        if (user && user.activeSubscription) {
+          // Expire current active subscription
+          user.activeSubscription.expiresAt = new Date();
+          await user.save();
+        }
+      }
+      return res.status(200).json({ status: true, message: "Subscription cancellation/halt processed" });
+    } else if (event === "payment.failed") {
+      const paymentEntity = payload.payload?.payment?.entity || {};
+      const notes = paymentEntity.notes || {};
+      const userId = notes.userId;
+      const planId = notes.planId;
+
+      if (userId && planId) {
+        const paymentLog = new Payment({
+          user: userId,
+          planId,
+          razorpay_payment_id: paymentEntity.id || `failed_${Date.now()}`,
+          razorpay_order_id: paymentEntity.order_id || `order_failed_${Date.now()}`,
+          razorpay_signature: signature,
+          amount: paymentEntity.amount || 0,
+          status: "failed",
+        });
+        await paymentLog.save();
+      }
+      return res.status(200).json({ status: true, message: "Payment failure logged successfully" });
     }
 
     return res.status(200).json({ status: true, message: "Webhook event acknowledged" });
@@ -2100,17 +2162,29 @@ export const getMe = async (req, res) => {
 
     const { pendingOrderId, pendingPlanId } = req.query;
     let paymentVerified = false;
+    let paymentProcessing = false;
+    let pendingPlanName = "";
     let updatedUser = user;
 
-    if (pendingOrderId) {
-      const existingPayment = await Payment.exists({
-        razorpay_order_id: pendingOrderId,
+    // Check DB for any payment with status 'created' in the last 10 minutes (server-side pending order tracking)
+    const createdPayment = await Payment.findOne({
+      user: updatedUser._id,
+      status: "created",
+      createdAt: { $gte: new Date(Date.now() - 10 * 60 * 1000) }
+    }).sort({ createdAt: -1 });
+
+    const targetOrderId = pendingOrderId || createdPayment?.razorpay_order_id;
+    const targetPlanId = pendingPlanId || createdPayment?.planId;
+
+    if (targetOrderId) {
+      const existingPayment = await Payment.findOne({
+        razorpay_order_id: targetOrderId,
         status: "verified"
       });
 
       if (existingPayment) {
         paymentVerified = true;
-      } else if (pendingPlanId) {
+      } else if (targetPlanId) {
         // Fetch order details from Razorpay to verify on the fly
         const razorpay = new Razorpay({
           key_id: process.env.RAZORPAY_KEY_ID,
@@ -2118,31 +2192,37 @@ export const getMe = async (req, res) => {
         });
 
         try {
-          const payments = await razorpay.orders.fetchPayments(pendingOrderId);
+          const payments = await razorpay.orders.fetchPayments(targetOrderId);
           const capturedPayment = payments.items?.find(p => p.status === "captured");
-          
-          if (capturedPayment) {
-            const plan = await Plan.findOne({ planId: pendingPlanId });
-            if (plan) {
-              // Apply provisioning logic using helper
-              fulfillSubscriptionPlan(user, plan);
-              await user.save();
-              updatedUser = user;
+          const plan = await Plan.findOne({ planId: targetPlanId });
 
-              // Store payment log
+          if (capturedPayment && plan) {
+            fulfillSubscriptionPlan(user, plan);
+            await user.save();
+            updatedUser = user;
+
+            if (createdPayment && createdPayment.razorpay_order_id === targetOrderId) {
+              createdPayment.razorpay_payment_id = capturedPayment.id;
+              createdPayment.status = "verified";
+              await createdPayment.save();
+            } else {
               const paymentLog = new Payment({
                 user: user._id,
-                planId: pendingPlanId,
+                planId: targetPlanId,
                 razorpay_payment_id: capturedPayment.id,
-                razorpay_order_id: pendingOrderId,
+                razorpay_order_id: targetOrderId,
                 razorpay_signature: "api_verified",
                 amount: plan.price * 100,
                 status: "verified",
               });
               await paymentLog.save();
-
-              paymentVerified = true;
             }
+
+            paymentVerified = true;
+          } else if (plan) {
+            // Payment order is still processing/pending on Razorpay
+            paymentProcessing = true;
+            pendingPlanName = plan.name;
           }
         } catch (err) {
           console.error("Razorpay verification inside getMe failed:", err);
@@ -2150,10 +2230,31 @@ export const getMe = async (req, res) => {
       }
     }
 
+    // Check for any recently verified payment in the last 15 minutes to notify user even if localStorage was cleared
+    let recentPaymentInfo = null;
+    const recentVerifiedPayment = await Payment.findOne({
+      user: updatedUser._id,
+      status: "verified",
+      createdAt: { $gte: new Date(Date.now() - 15 * 60 * 1000) }
+    }).sort({ createdAt: -1 });
+
+    if (recentVerifiedPayment) {
+      const plan = await Plan.findOne({ planId: recentVerifiedPayment.planId });
+      recentPaymentInfo = {
+        paymentId: recentVerifiedPayment.razorpay_payment_id,
+        planId: recentVerifiedPayment.planId,
+        planName: plan ? plan.name : recentVerifiedPayment.planId,
+        verifiedAt: recentVerifiedPayment.createdAt,
+      };
+    }
+
     return res.status(200).json({
       status: true,
       user: buildUserResponse(updatedUser),
-      paymentVerified
+      paymentVerified,
+      paymentProcessing,
+      pendingPlanName,
+      recentPayment: recentPaymentInfo,
     });
   } catch (error) {
     console.error("Get Me Error:", error);
