@@ -2194,6 +2194,7 @@ export const getMe = async (req, res) => {
         try {
           const payments = await razorpay.orders.fetchPayments(targetOrderId);
           const capturedPayment = payments.items?.find(p => p.status === "captured");
+          const failedPayment = payments.items?.find(p => p.status === "failed");
           const plan = await Plan.findOne({ planId: targetPlanId });
 
           if (capturedPayment && plan) {
@@ -2219,10 +2220,24 @@ export const getMe = async (req, res) => {
             }
 
             paymentVerified = true;
-          } else if (plan) {
-            // Payment order is still processing/pending on Razorpay
-            paymentProcessing = true;
-            pendingPlanName = plan.name;
+          } else if (failedPayment && plan) {
+            // Mark payment as failed in DB if Razorpay reports payment failed
+            if (createdPayment && createdPayment.razorpay_order_id === targetOrderId) {
+              createdPayment.razorpay_payment_id = failedPayment.id;
+              createdPayment.status = "failed";
+              await createdPayment.save();
+            }
+            paymentProcessing = false;
+          } else if (plan && (!payments.items || payments.items.length === 0)) {
+            // Only set paymentProcessing if no attempts exist and order is recent (< 5 mins)
+            const orderAgeMinutes = (Date.now() - new Date(createdPayment?.createdAt || Date.now()).getTime()) / (1000 * 60);
+            if (orderAgeMinutes < 5) {
+              paymentProcessing = true;
+              pendingPlanName = plan.name;
+            } else if (createdPayment) {
+              createdPayment.status = "failed";
+              await createdPayment.save();
+            }
           }
         } catch (err) {
           console.error("Razorpay verification inside getMe failed:", err);
