@@ -2,17 +2,30 @@ import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 
 let io;
-const userSockets = new Map(); // userId -> socketId
+
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3005",
+  "http://localhost:5173",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
 
 export const initSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: "*",
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.startsWith("http://localhost:")) {
+          callback(null, true);
+        } else {
+          callback(new Error("Not allowed by CORS"));
+        }
+      },
       methods: ["GET", "POST"],
+      allowedHeaders: ["Content-Type", "Authorization"],
     },
   });
 
-  // Verify JWT token on connection
+  // Verify JWT token on connection & attach room
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) {
@@ -20,7 +33,7 @@ export const initSocket = (server) => {
     }
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      socket.userId = decoded.id; // Store verified userId (user._id) on the socket
+      socket.userId = decoded.id;
       next();
     } catch (err) {
       return next(new Error("Authentication error: Invalid token"));
@@ -28,13 +41,14 @@ export const initSocket = (server) => {
   });
 
   io.on("connection", (socket) => {
-    console.log("Socket client connected:", socket.id, "Verified User:", socket.userId);
+    const userRoom = `user:${socket.userId}`;
+    socket.join(userRoom);
+    console.log(`Socket client ${socket.id} connected & joined room ${userRoom}`);
 
     socket.on("register", (userId) => {
-      // Validate that the registration payload matches the verified token identity
       if (userId && userId.toString() === socket.userId) {
-        userSockets.set(socket.userId, socket.id);
-        console.log(`Registered authenticated user ${socket.userId} to socket ${socket.id}`);
+        socket.join(userRoom);
+        console.log(`User ${socket.userId} re-confirmed registration to room ${userRoom}`);
       } else {
         console.warn(`Socket registration rejected for ${socket.id}: Mismatched identity (Expected ${socket.userId}, got ${userId})`);
         socket.disconnect();
@@ -42,14 +56,7 @@ export const initSocket = (server) => {
     });
 
     socket.on("disconnect", () => {
-      console.log("Socket client disconnected:", socket.id);
-      for (const [userId, socketId] of userSockets.entries()) {
-        if (socketId === socket.id) {
-          userSockets.delete(userId);
-          console.log(`Unregistered user ${userId}`);
-          break;
-        }
-      }
+      console.log(`Socket client disconnected: ${socket.id}`);
     });
   });
 
@@ -61,12 +68,8 @@ export const sendRealtimeMessage = (userId, message) => {
     console.warn("Socket.io is not initialized!");
     return false;
   }
-  const socketId = userSockets.get(userId.toString());
-  if (socketId) {
-    io.to(socketId).emit("new_message", message);
-    console.log(`Sent real-time message to user ${userId}`);
-    return true;
-  }
-  console.log(`User ${userId} is offline, message not sent in real-time`);
-  return false;
+  const userRoom = `user:${userId.toString()}`;
+  io.to(userRoom).emit("new_message", message);
+  console.log(`Emitted real-time message to room ${userRoom}`);
+  return true;
 };
