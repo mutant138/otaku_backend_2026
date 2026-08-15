@@ -372,3 +372,217 @@ export const redeemPlan = async (req, res) => {
     return res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
+
+/**
+ * Helper function to apply subscription plan benefits to a user.
+ */
+export const fulfillSubscriptionPlan = (user, plan) => {
+  const isGirl = user.gender && ["female", "girl", "woman"].includes(user.gender.toLowerCase().trim());
+  const multiplier = isGirl ? 2 : 1;
+
+  const complimentsAdded = (plan.complimentsRefill || 0) * multiplier;
+  user.complimentsBalance = (user.complimentsBalance !== undefined ? user.complimentsBalance : 1) + complimentsAdded;
+
+  let extraSwipesAdded = 0;
+  if (plan.planId === "mana-drop") {
+    extraSwipesAdded = 15 * multiplier;
+    user.extraSwipesBalance = (user.extraSwipesBalance || 0) + extraSwipesAdded;
+  }
+
+  let superLikesAdded = 0;
+  if (plan.planId === "mana-drop") {
+    superLikesAdded = 1 * multiplier;
+  } else if (plan.planId === "power-surge") {
+    superLikesAdded = 3 * multiplier;
+  } else if (plan.planId === "otaku-pass") {
+    superLikesAdded = 5 * multiplier;
+  }
+  user.superLikesBalance = (user.superLikesBalance !== undefined ? user.superLikesBalance : 1) + superLikesAdded;
+
+  if (plan.isPremium) {
+    user.isPremium = true;
+  }
+
+  if (plan.type === "subscription" && plan.durationDays > 0) {
+    const purchasedAt = new Date();
+    const expiresAt = new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000);
+    user.activeSubscription = {
+      plan: plan._id,
+      planId: plan.planId,
+      purchasedAt,
+      expiresAt,
+    };
+  }
+
+  return user;
+};
+
+/**
+ * Handle incoming Razorpay Webhook notifications for payments and subscriptions.
+ * Route: POST /api/user/razorpay-webhook
+ */
+export const handleRazorpayWebhook = async (req, res) => {
+  try {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "otaku_razorpay_webhook_secret_2026";
+    const signature = req.headers["x-razorpay-signature"];
+
+    if (!signature) {
+      return res.status(400).json({ status: false, message: "Missing Razorpay webhook signature header" });
+    }
+
+    const rawBody = req.rawBody
+      ? req.rawBody
+      : (typeof req.body === "string" ? Buffer.from(req.body) : Buffer.from(JSON.stringify(req.body)));
+
+    const expectedSignature = crypto
+      .createHmac("sha256", webhookSecret)
+      .update(rawBody)
+      .digest("hex");
+
+    const expectedBuffer = Buffer.from(expectedSignature, "utf8");
+    const signatureBuffer = Buffer.from(signature, "utf8");
+
+    if (
+      expectedBuffer.length !== signatureBuffer.length ||
+      !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)
+    ) {
+      return res.status(400).json({ status: false, message: "Webhook signature verification failed" });
+    }
+
+    const payload = req.body;
+    const event = payload?.event;
+    console.log(`[Razorpay Webhook] Received event: ${event}`);
+
+    if (["payment.captured", "payment.authorized", "order.paid", "subscription.charged", "subscription.authenticated"].includes(event)) {
+      const paymentEntity = payload.payload?.payment?.entity || {};
+      const orderEntity = payload.payload?.order?.entity || {};
+      const subscriptionEntity = payload.payload?.subscription?.entity || {};
+
+      const razorpay_payment_id = paymentEntity.id || payload.payload?.payment_id || `webhook_${Date.now()}`;
+      const razorpay_order_id = paymentEntity.order_id || orderEntity.id || subscriptionEntity.id;
+      const notes = paymentEntity.notes || orderEntity.notes || subscriptionEntity.notes || {};
+
+      const userId = notes.userId;
+      const planId = notes.planId;
+
+      let existingPayment = null;
+      if (razorpay_payment_id) {
+        existingPayment = await dbCommonQuery({
+          model: "Payment",
+          action: "findOne",
+          filter: { razorpay_payment_id, status: "verified" },
+        });
+      }
+      if (!existingPayment && razorpay_order_id) {
+        existingPayment = await dbCommonQuery({
+          model: "Payment",
+          action: "findOne",
+          filter: { razorpay_order_id, status: "verified" },
+        });
+      }
+
+      if (existingPayment) {
+        return res.status(200).json({ status: true, message: "Payment already processed and verified." });
+      }
+
+      if (!userId || !planId) {
+        return res.status(200).json({ status: true, message: "Webhook received but missing order notes (userId / planId)" });
+      }
+
+      const user = await dbCommonQuery({
+        model: "User",
+        action: "findById",
+        filter: userId,
+        lean: false,
+      });
+
+      const plan = await dbCommonQuery({
+        model: "Plan",
+        action: "findOne",
+        filter: { planId },
+        lean: true,
+      });
+
+      if (user && plan) {
+        fulfillSubscriptionPlan(user, plan);
+        await user.save();
+
+        let paymentLog = await dbCommonQuery({
+          model: "Payment",
+          action: "findOne",
+          filter: { razorpay_order_id },
+          lean: false,
+        });
+
+        if (paymentLog) {
+          paymentLog.razorpay_payment_id = razorpay_payment_id;
+          paymentLog.razorpay_signature = signature;
+          paymentLog.status = "verified";
+          await paymentLog.save();
+        } else {
+          await dbCommonQuery({
+            model: "Payment",
+            action: "create",
+            data: {
+              user: user._id,
+              planId: plan.planId,
+              razorpay_payment_id,
+              razorpay_order_id: razorpay_order_id || `order_wh_${Date.now()}`,
+              razorpay_signature: signature,
+              amount: paymentEntity.amount || (plan.price * 100),
+              status: "verified",
+            },
+          });
+        }
+
+        return res.status(200).json({ status: true, message: "Webhook payment fulfilled successfully!" });
+      }
+    } else if (["subscription.cancelled", "subscription.halted"].includes(event)) {
+      const subscriptionEntity = payload.payload?.subscription?.entity || {};
+      const notes = subscriptionEntity.notes || {};
+      const userId = notes.userId;
+
+      if (userId) {
+        const user = await dbCommonQuery({
+          model: "User",
+          action: "findById",
+          filter: userId,
+          lean: false,
+        });
+        if (user && user.activeSubscription) {
+          user.activeSubscription.expiresAt = new Date();
+          await user.save();
+        }
+      }
+      return res.status(200).json({ status: true, message: "Subscription cancellation/halt processed" });
+    } else if (event === "payment.failed") {
+      const paymentEntity = payload.payload?.payment?.entity || {};
+      const notes = paymentEntity.notes || {};
+      const userId = notes.userId;
+      const planId = notes.planId;
+
+      if (userId && planId) {
+        await dbCommonQuery({
+          model: "Payment",
+          action: "create",
+          data: {
+            user: userId,
+            planId,
+            razorpay_payment_id: paymentEntity.id || `failed_${Date.now()}`,
+            razorpay_order_id: paymentEntity.order_id || `order_failed_${Date.now()}`,
+            razorpay_signature: signature,
+            amount: paymentEntity.amount || 0,
+            status: "failed",
+          },
+        });
+      }
+      return res.status(200).json({ status: true, message: "Payment failure logged successfully" });
+    }
+
+    return res.status(200).json({ status: true, message: "Webhook event acknowledged" });
+  } catch (error) {
+    console.error("Razorpay Webhook Error:", error);
+    return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
