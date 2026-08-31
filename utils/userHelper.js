@@ -93,6 +93,7 @@ export function buildUserResponse(user) {
     superLikesBalance: user.superLikesBalance !== undefined ? user.superLikesBalance : 1,
     isPremium,
     activeSubscription: user.activeSubscription || null,
+    role: user.role || "user",
   };
 }
 

@@ -6,9 +6,11 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import connectDB from "./db.js";
 import userRoutes from "./Routes/user.routes.js";
+import adminRoutes from "./Routes/admin/index.js";
 import { initSocket } from "./socket/socket.js";
 import passport from "./config/passport.js";
 import { ensureWelcomeBot, startWelcomeBotScheduler } from "./utils/seedWelcomeBot.js";
+import { ensureAdminUser } from "./utils/seedAdmin.js";
 import mongoose from "mongoose";
 
 dotenv.config();
@@ -109,6 +111,7 @@ app.use(passport.initialize());
 
 // Routes
 app.use("/api/user", userRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
@@ -138,6 +141,7 @@ initSocket(server);
   await connectDB();
   await ensureWelcomeBot();
   startWelcomeBotScheduler();
+  await ensureAdminUser();
   server.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);
   });
