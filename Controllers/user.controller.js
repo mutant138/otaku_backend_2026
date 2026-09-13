@@ -3,6 +3,7 @@ import * as profileController from "./profile.controller.js";
 import * as matchmakingController from "./matchmaking.controller.js";
 import * as chatController from "./chat.controller.js";
 import * as paymentController from "./payment.controller.js";
+import * as feedbackController from "./feedback.controller.js";
 
 // Re-export Auth Controller methods
 export const checkEmail = authController.checkEmail;
@@ -47,6 +48,9 @@ export const verifyPayment = paymentController.verifyPayment;
 export const handleRazorpayWebhook = paymentController.handleRazorpayWebhook;
 export const redeemPlan = paymentController.redeemPlan;
 
+// Re-export Feedback Controller methods
+export const submitFeedback = feedbackController.submitFeedback;
+
 export default {
   checkEmail,
   registerUser,
@@ -81,4 +85,5 @@ export default {
   verifyPayment,
   handleRazorpayWebhook,
   redeemPlan,
+  submitFeedback,
 };

@@ -54,5 +54,6 @@ router.get("/profile/:id", authMiddleware.protect, authMiddleware.requireOnboard
 router.get("/lobby/chats", authMiddleware.protect, authMiddleware.requireOnboarded, userController.getLobbyChats);
 router.get("/lobby/messages/:otherUserId", authMiddleware.protect, authMiddleware.requireOnboarded, userController.getChatMessages);
 router.post("/lobby/messages", authMiddleware.protect, authMiddleware.requireOnboarded, validate(sendChatMessageSchema), userController.sendChatMessage);
+router.post("/feedback", userController.submitFeedback);
 
 export default router;
