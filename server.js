@@ -12,17 +12,25 @@ import passport from "./config/passport.js";
 import { ensureWelcomeBot, startWelcomeBotScheduler } from "./utils/seedWelcomeBot.js";
 import { ensureAdminUser } from "./utils/seedAdmin.js";
 import mongoose from "mongoose";
+import morgan from "morgan";
 
 dotenv.config();
 // import dns from "dns";
 
 // dns.setServers(["1.1.1.1", "1.0.0.1"]);
 const app = express();
-
+app.set("trust proxy", 1);
 // Apply security headers (allow cross-origin resource sharing for static files)
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
+
+// apply logs
+
+morgan.token("user", (req) => (req.user ? req.user.email : "Guest"));
+app.use(
+  morgan("IP: :remote-addr | User: :user | :method :url :status - :response-time ms")
+);
 
 // Configure CORS with allowed origins list
 const allowedOrigins = [
