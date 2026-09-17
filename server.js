@@ -7,10 +7,12 @@ import rateLimit from "express-rate-limit";
 import connectDB from "./db.js";
 import userRoutes from "./Routes/user.routes.js";
 import adminRoutes from "./Routes/admin/index.js";
+import publicRoutes from "./Routes/public.routes.js";
 import { initSocket } from "./socket/socket.js";
 import passport from "./config/passport.js";
 import { ensureWelcomeBot, startWelcomeBotScheduler } from "./utils/seedWelcomeBot.js";
 import { ensureAdminUser } from "./utils/seedAdmin.js";
+import { ensureDefaultBlogs } from "./utils/seedBlogs.js";
 import mongoose from "mongoose";
 import morgan from "morgan";
 
@@ -120,6 +122,7 @@ app.use(passport.initialize());
 // Routes
 app.use("/api/user", userRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api", publicRoutes);
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
@@ -150,6 +153,7 @@ initSocket(server);
   await ensureWelcomeBot();
   startWelcomeBotScheduler();
   await ensureAdminUser();
+  await ensureDefaultBlogs();
   server.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);
   });

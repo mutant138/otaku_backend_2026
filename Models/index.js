@@ -12,6 +12,7 @@ import GameTitle from "./gameTitle.schema.js";
 import Country from "./country.schema.js";
 import State from "./state.schema.js";
 import City from "./city.schema.js";
+import Blog from "./blog.schema.js";
 
 const modelsMap = {
   User,
@@ -28,6 +29,7 @@ const modelsMap = {
   Country,
   State,
   City,
+  Blog,
 };
 
 export {
@@ -45,6 +47,7 @@ export {
   Country,
   State,
   City,
+  Blog,
   modelsMap,
 };
 

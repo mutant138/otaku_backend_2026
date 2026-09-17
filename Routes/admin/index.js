@@ -9,6 +9,7 @@ import paymentRoutes from "./payment.admin.routes.js";
 import reportRoutes from "./report.admin.routes.js";
 import locationRoutes from "./location.admin.routes.js";
 import emailRoutes from "./email.admin.routes.js";
+import blogRoutes from "./blog.admin.routes.js";
 
 const router = express.Router();
 
@@ -22,5 +23,6 @@ router.use("/payments", paymentRoutes);
 router.use("/reports", reportRoutes);
 router.use("/locations", locationRoutes);
 router.use("/emails", emailRoutes);
+router.use("/blogs", blogRoutes);
 
 export default router;
