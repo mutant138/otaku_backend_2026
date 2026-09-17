@@ -4,6 +4,13 @@ import * as matchmakingController from "./matchmaking.controller.js";
 import * as chatController from "./chat.controller.js";
 import * as paymentController from "./payment.controller.js";
 import * as feedbackController from "./feedback.controller.js";
+import * as pushController from "./push.controller.js";
+
+// Re-export Push Notification Controller methods
+export const getVapidPublicKey = pushController.getVapidPublicKey;
+export const subscribePush = pushController.subscribePush;
+export const unsubscribePush = pushController.unsubscribePush;
+export const sendTestPush = pushController.sendTestPush;
 
 // Re-export Auth Controller methods
 export const checkEmail = authController.checkEmail;
@@ -86,4 +93,8 @@ export default {
   handleRazorpayWebhook,
   redeemPlan,
   submitFeedback,
+  getVapidPublicKey,
+  subscribePush,
+  unsubscribePush,
+  sendTestPush,
 };

@@ -185,6 +185,18 @@ const userSchema = new mongoose.Schema({
     enum: ["user", "admin"],
     default: "user",
   },
+  pushSubscriptions: [
+    {
+      endpoint: { type: String, required: true },
+      expirationTime: { type: Date, default: null },
+      keys: {
+        p256dh: { type: String, required: true },
+        auth: { type: String, required: true },
+      },
+      userAgent: { type: String },
+      createdAt: { type: Date, default: Date.now },
+    },
+  ],
 }, {
   timestamps: true,
 });

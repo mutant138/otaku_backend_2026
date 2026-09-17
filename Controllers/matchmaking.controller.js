@@ -295,6 +295,36 @@ export const swipeUser = async (req, res) => {
       await user.save();
     }
 
+    // Trigger Push Notifications in background for matches, compliments, or likes
+    if (["like", "super"].includes(swipeType)) {
+      (async () => {
+        try {
+          const otherSwipe = await dbCommonQuery({
+            model: "Swipe",
+            action: "findOne",
+            filter: { swiper: swipeeId, swipee: swiperId, swipeType: { $in: ["like", "super"] } },
+            lean: true,
+          });
+
+          const { sendNewMatchPush, sendComplimentPush, sendProfileViewPush } = await import("../utils/pushNotification.service.js");
+
+          if (otherSwipe) {
+            // Mutual Duo Established!
+            sendNewMatchPush(swipeeId, user, 95);
+            sendNewMatchPush(swiperId, swipee, 95);
+          } else if (compliment && compliment.trim()) {
+            // Direct Compliment
+            sendComplimentPush(swipeeId, user, compliment.trim());
+          } else {
+            // Radar signal swipe
+            sendProfileViewPush(swipeeId, user, 92);
+          }
+        } catch (pushErr) {
+          console.error("Swipe push dispatch error:", pushErr.message);
+        }
+      })();
+    }
+
     const newSwipesLeft = hasSubscription ? 9999 : Math.max(0, 5 - (todaySwipesCount + 1)) + (user.extraSwipesBalance || 0);
 
     return res.status(201).json({

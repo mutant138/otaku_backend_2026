@@ -73,3 +73,12 @@ export const sendRealtimeMessage = (userId, message) => {
   console.log(`Emitted real-time message to room ${userRoom}`);
   return true;
 };
+
+export const sendRealtimeNotification = (userId, notification) => {
+  if (!io) return false;
+  const userRoom = `user:${userId.toString()}`;
+  io.to(userRoom).emit("notification", notification);
+  console.log(`Emitted real-time notification to room ${userRoom}`);
+  return true;
+};
+

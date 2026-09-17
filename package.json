@@ -40,6 +40,7 @@
     "passport": "^0.7.0",
     "passport-custom": "^1.1.1",
     "razorpay": "^2.9.6",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "web-push": "^3.6.7"
   }
 }

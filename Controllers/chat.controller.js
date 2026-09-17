@@ -253,6 +253,13 @@ export const sendChatMessage = async (req, res) => {
     const { sendRealtimeMessage } = await import("../socket/socket.js");
     sendRealtimeMessage(receiverId, newMessage);
 
+    // Send Web Push notification in background
+    import("../utils/pushNotification.service.js")
+      .then(({ sendNewMessagePush }) => {
+        sendNewMessagePush(receiverId, req.user, content.trim());
+      })
+      .catch((err) => console.error("Push notify error:", err.message));
+
     return res.status(201).json({
       status: true,
       message: "Message sent successfully",

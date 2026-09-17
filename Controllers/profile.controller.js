@@ -414,6 +414,15 @@ export const getUserProfile = async (req, res) => {
       return res.status(404).json({ status: false, message: "User profile not found" });
     }
 
+    // Trigger profile view push notification if viewing someone else
+    if (req.user && req.user._id.toString() !== id.toString()) {
+      import("../utils/pushNotification.service.js")
+        .then(({ sendProfileViewPush }) => {
+          sendProfileViewPush(id, req.user, 91);
+        })
+        .catch((err) => console.error("Profile view push error:", err.message));
+    }
+
     return res.status(200).json({
       status: true,
       user: buildPublicUserResponse(user),

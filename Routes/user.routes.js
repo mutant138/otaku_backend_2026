@@ -56,4 +56,10 @@ router.get("/lobby/messages/:otherUserId", authMiddleware.protect, authMiddlewar
 router.post("/lobby/messages", authMiddleware.protect, authMiddleware.requireOnboarded, validate(sendChatMessageSchema), userController.sendChatMessage);
 router.post("/feedback", userController.submitFeedback);
 
+// Web Push Notification routes
+router.get("/push/vapid-key", userController.getVapidPublicKey);
+router.post("/push/subscribe", authMiddleware.protect, userController.subscribePush);
+router.post("/push/unsubscribe", authMiddleware.protect, userController.unsubscribePush);
+router.post("/push/test", authMiddleware.protect, userController.sendTestPush);
+
 export default router;
