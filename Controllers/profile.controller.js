@@ -410,7 +410,7 @@ export const getUserProfile = async (req, res) => {
       lean: true,
     });
 
-    if (!user) {
+    if (!user || user.role === "admin") {
       return res.status(404).json({ status: false, message: "User profile not found" });
     }
 

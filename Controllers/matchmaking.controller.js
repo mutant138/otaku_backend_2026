@@ -45,6 +45,7 @@ export const getCandidates = async (req, res) => {
     const query = {
       _id: { $ne: currentUserId, $nin: excludedUserIds },
       isOnboarded: true,
+      role: { $ne: "admin" },
     };
 
     if (userPath === "anime") {
@@ -121,8 +122,8 @@ export const swipeUser = async (req, res) => {
       lean: true,
     });
 
-    if (!swipee) {
-      return res.status(404).json({ status: false, message: "Target user not found" });
+    if (!swipee || swipee.role === "admin") {
+      return res.status(404).json({ status: false, message: "Target user not found or cannot be swiped" });
     }
 
     if (compliment && compliment.trim()) {
@@ -379,6 +380,7 @@ export const getLobbyLikes = async (req, res) => {
     });
 
     const likes = likedSwipes
+      .filter((s) => s.swiper && s.swiper.role !== "admin")
       .map((s) => {
         const userRes = buildPublicUserResponse(s.swiper);
         if (userRes) {
