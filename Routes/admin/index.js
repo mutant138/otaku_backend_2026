@@ -12,6 +12,8 @@ import emailRoutes from "./email.admin.routes.js";
 import blogRoutes from "./blog.admin.routes.js";
 import feedbackRoutes from "./feedback.admin.routes.js";
 import loginHistoryRoutes from "./loginHistory.admin.routes.js";
+import quizQuestionRoutes from "./quizQuestion.admin.routes.js";
+import duelRoutes from "./duel.admin.routes.js";
 
 const router = express.Router();
 
@@ -28,5 +30,7 @@ router.use("/emails", emailRoutes);
 router.use("/blogs", blogRoutes);
 router.use("/feedbacks", feedbackRoutes);
 router.use("/login-history", loginHistoryRoutes);
+router.use("/quiz-questions", quizQuestionRoutes);
+router.use("/duels", duelRoutes);
 
 export default router;

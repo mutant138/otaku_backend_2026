@@ -20,6 +20,8 @@ export const getDashboardStats = async (req, res) => {
       pendingReports,
       totalCountries,
       totalCities,
+      totalQuizQuestions,
+      totalDuels,
     ] = await Promise.all([
       dbCommonQuery({ model: "User", action: "countDocuments", filter: {} }),
       dbCommonQuery({ model: "User", action: "countDocuments", filter: { isPremium: true } }),
@@ -33,6 +35,8 @@ export const getDashboardStats = async (req, res) => {
       dbCommonQuery({ model: "Report", action: "countDocuments", filter: {} }),
       dbCommonQuery({ model: "Country", action: "countDocuments", filter: {} }),
       dbCommonQuery({ model: "City", action: "countDocuments", filter: {} }),
+      dbCommonQuery({ model: "QuizQuestion", action: "countDocuments", filter: {} }),
+      dbCommonQuery({ model: "DuelHistory", action: "countDocuments", filter: {} }),
     ]);
 
     // Calculate total verified revenue (in INR)
@@ -95,6 +99,8 @@ export const getDashboardStats = async (req, res) => {
           totalCountries,
           totalCities,
           totalRevenueInr,
+          totalQuizQuestions,
+          totalDuels,
         },
         recentUsers,
         recentPayments,
