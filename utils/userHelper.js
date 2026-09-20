@@ -91,6 +91,8 @@ export function buildUserResponse(user) {
     complimentsBalance: user.complimentsBalance !== undefined ? user.complimentsBalance : 1,
     extraSwipesBalance: user.extraSwipesBalance || 0,
     superLikesBalance: user.superLikesBalance !== undefined ? user.superLikesBalance : 1,
+    profileCompletedRewardClaimed: user.profileCompletedRewardClaimed || false,
+    loginStreak: user.loginStreak || { current: 1, lastLoginDate: new Date(), best: 1 },
     isPremium,
     activeSubscription: user.activeSubscription || null,
     role: user.role || "user",
@@ -141,3 +143,57 @@ export function buildPublicUserResponse(user) {
     isPremium
   };
 }
+
+/**
+ * Calculates and updates user's daily login streak and awards +3 bonus swipes every 7 days.
+ * @param {Object} user - Mongoose user document
+ * @returns {{ streakUpdated: boolean, bonusAwarded: number }}
+ */
+export function processLoginStreak(user) {
+  if (!user) return { streakUpdated: false, bonusAwarded: 0 };
+
+  const now = new Date();
+  const last = user.loginStreak?.lastLoginDate ? new Date(user.loginStreak.lastLoginDate) : null;
+
+  // Convert to UTC day indices
+  const MS_PER_DAY = 1000 * 60 * 60 * 24;
+  const nowDay = Math.floor(now.getTime() / MS_PER_DAY);
+  const lastDay = last ? Math.floor(last.getTime() / MS_PER_DAY) : null;
+
+  if (!user.loginStreak) {
+    user.loginStreak = { current: 1, lastLoginDate: now, best: 1 };
+    return { streakUpdated: true, bonusAwarded: 0 };
+  }
+
+  // Already checked in today
+  if (lastDay !== null && lastDay === nowDay) {
+    return { streakUpdated: false, bonusAwarded: 0 };
+  }
+
+  // Consecutive day check-in (yesterday)
+  if (lastDay !== null && lastDay === nowDay - 1) {
+    user.loginStreak.current = (user.loginStreak.current || 0) + 1;
+    if (user.loginStreak.current > (user.loginStreak.best || 0)) {
+      user.loginStreak.best = user.loginStreak.current;
+    }
+    user.loginStreak.lastLoginDate = now;
+
+    let bonusAwarded = 0;
+    // 7-day streak milestone reward (+3 bonus swipes)
+    if (user.loginStreak.current % 7 === 0) {
+      user.extraSwipesBalance = (user.extraSwipesBalance || 0) + 3;
+      bonusAwarded = 3;
+    }
+
+    return { streakUpdated: true, bonusAwarded };
+  }
+
+  // Streak broken (missed more than 1 day) -> reset to Day 1
+  user.loginStreak.current = 1;
+  user.loginStreak.lastLoginDate = now;
+  if (!user.loginStreak.best) {
+    user.loginStreak.best = 1;
+  }
+  return { streakUpdated: true, bonusAwarded: 0 };
+}
+

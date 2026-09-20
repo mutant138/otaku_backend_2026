@@ -13,6 +13,7 @@ import Country from "./country.schema.js";
 import State from "./state.schema.js";
 import City from "./city.schema.js";
 import Blog from "./blog.schema.js";
+import Feedback from "./feedback.schema.js";
 
 const modelsMap = {
   User,
@@ -30,6 +31,7 @@ const modelsMap = {
   State,
   City,
   Blog,
+  Feedback,
 };
 
 export {
@@ -48,6 +50,7 @@ export {
   State,
   City,
   Blog,
+  Feedback,
   modelsMap,
 };
 

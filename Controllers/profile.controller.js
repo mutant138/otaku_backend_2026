@@ -177,11 +177,41 @@ export const updateProfile = async (req, res) => {
       user.isProfileCompleted = true;
     }
 
+    // Check if 100% calibration achieved (all mandatory + all optional fields)
+    const optionalFields = [
+      user.height,
+      user.weight,
+      user.education,
+      user.drinking,
+      user.smoking,
+      user.lookingFor,
+      user.kids,
+      user.politics,
+      user.discord,
+      user.instagram,
+    ];
+    const filledOptionals = optionalFields.filter((field) => !!field && field.toString().trim() !== "").length;
+    const is100Percent =
+      Boolean(user.fullname && user.gender && user.age && user.location && user.bio) &&
+      filledOptionals === optionalFields.length;
+
+    let rewardAwarded = null;
+    if (is100Percent && !user.profileCompletedRewardClaimed) {
+      user.superLikesBalance = (user.superLikesBalance || 0) + 1;
+      user.profileCompletedRewardClaimed = true;
+      rewardAwarded = {
+        type: "superLike",
+        count: 1,
+        message: "🎉 100% Character Calibration achieved! You received 1 Free Super Like!",
+      };
+    }
+
     await user.save();
 
     return res.status(200).json({
       status: true,
-      message: "Profile updated successfully",
+      message: rewardAwarded ? rewardAwarded.message : "Profile updated successfully",
+      rewardAwarded,
       user: buildUserResponse(user),
     });
   } catch (error) {

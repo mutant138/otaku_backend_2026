@@ -160,6 +160,24 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 1, // Free users get 1 free super like
   },
+  profileCompletedRewardClaimed: {
+    type: Boolean,
+    default: false,
+  },
+  loginStreak: {
+    current: {
+      type: Number,
+      default: 1,
+    },
+    lastLoginDate: {
+      type: Date,
+      default: Date.now,
+    },
+    best: {
+      type: Number,
+      default: 1,
+    },
+  },
   isPremium: {
     type: Boolean,
     default: false,

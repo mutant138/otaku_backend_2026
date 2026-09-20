@@ -115,15 +115,21 @@ passport.use(
 
         await user.save();
 
-        // Award synergy to referrer immediately since OAuth is auto-verified
+        // Award synergy and +5 extra swipes to referrer immediately since OAuth is auto-verified
         if (referredBy) {
           const referrer = await User.findOne({ userId: referredBy.trim() });
           if (referrer) {
             referrer.synergy = (referrer.synergy || 0) + 5;
+            referrer.extraSwipesBalance = (referrer.extraSwipesBalance || 0) + 5;
             await referrer.save();
           }
         }
       }
+
+      // Update user login streak
+      const { processLoginStreak } = await import("../utils/userHelper.js");
+      processLoginStreak(user);
+      await user.save();
 
       return done(null, user);
     } catch (err) {

@@ -10,6 +10,7 @@ import reportRoutes from "./report.admin.routes.js";
 import locationRoutes from "./location.admin.routes.js";
 import emailRoutes from "./email.admin.routes.js";
 import blogRoutes from "./blog.admin.routes.js";
+import feedbackRoutes from "./feedback.admin.routes.js";
 
 const router = express.Router();
 
@@ -24,5 +25,6 @@ router.use("/reports", reportRoutes);
 router.use("/locations", locationRoutes);
 router.use("/emails", emailRoutes);
 router.use("/blogs", blogRoutes);
+router.use("/feedbacks", feedbackRoutes);
 
 export default router;

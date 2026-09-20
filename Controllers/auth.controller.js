@@ -10,6 +10,7 @@ import {
   generateOTP,
   generateRandomUsername,
   buildUserResponse,
+  processLoginStreak,
 } from "../utils/userHelper.js";
 
 /**
@@ -261,9 +262,13 @@ export const verifyOtp = async (req, res) => {
       });
       if (referrer) {
         referrer.synergy = (referrer.synergy || 0) + 5;
+        referrer.extraSwipesBalance = (referrer.extraSwipesBalance || 0) + 5;
         await referrer.save();
       }
     }
+
+    processLoginStreak(user);
+    await user.save();
 
     const token = generateToken(user._id);
     return res.status(200).json({
@@ -414,6 +419,9 @@ export const loginUser = async (req, res) => {
       });
     }
 
+    processLoginStreak(user);
+    await user.save();
+
     const token = generateToken(user._id);
     return res.status(200).json({
       message: "Login successful",
@@ -555,10 +563,14 @@ export const oauthLoginOrSignup = async (req, res, next) => {
           });
           if (referrer) {
             referrer.synergy = (referrer.synergy || 0) + 5;
+            referrer.extraSwipesBalance = (referrer.extraSwipesBalance || 0) + 5;
             await referrer.save();
           }
         }
       }
+
+      processLoginStreak(user);
+      await user.save();
 
       const token = generateToken(user._id);
       return res.status(200).json({
@@ -841,10 +853,16 @@ export const getMe = async (req, res) => {
       }
     }
 
+    const streakRes = processLoginStreak(updatedUser);
+    if (streakRes.streakUpdated) {
+      await updatedUser.save();
+    }
+
     return res.status(200).json({
       status: true,
       user: buildUserResponse(updatedUser),
       paymentVerified,
+      streakBonus: streakRes.bonusAwarded,
     });
   } catch (error) {
     console.error("Get Me Error:", error);

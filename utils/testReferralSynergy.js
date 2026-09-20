@@ -317,11 +317,13 @@ async function runTests() {
   console.log("\n--- Running Test Case 6: Synergy Redemption - Female User (2x Multiplier) ---");
   {
     // Prepare female user with 10000 points
-    referredUser.synergy = 10000;
-    referredUser.gender = "female";
-    referredUser.complimentsBalance = 1;
-    referredUser.superLikesBalance = 1;
-    await referredUser.save();
+    await User.findByIdAndUpdate(referredUser._id, {
+      synergy: 10000,
+      gender: "female",
+      complimentsBalance: 1,
+      superLikesBalance: 1,
+    });
+    referredUser = await User.findById(referredUser._id);
 
     const req = {
       body: { planId: "power-surge" },
@@ -348,6 +350,96 @@ async function runTests() {
     }
 
     console.log("✓ Test Case 6 Passed! Redeemed power-surge, deducted 10000 synergy points, applied 2x rewards for female user, and set active subscription.");
+  }
+
+  // -------------------------------------------------------------
+  // Test Case 7: 100% Profile Calibration Super Like Award
+  // -------------------------------------------------------------
+  console.log("\n--- Running Test Case 7: 100% Profile Calibration Super Like Award ---");
+  {
+    const { updateProfile } = await import("../Controllers/profile.controller.js");
+    
+    // Create a fresh test user
+    const calibUser = await User.create({
+      username: "CalibTester",
+      email: "calib@example.com",
+      userId: "OTK_CALIB01",
+      isVerified: true,
+      superLikesBalance: 1,
+      profileCompletedRewardClaimed: false,
+    });
+
+    const updateReq = {
+      user: calibUser,
+      body: {
+        fullname: "Calib Fullname",
+        gender: "female",
+        age: 22,
+        location: "Tokyo, Japan",
+        bio: "Anime and Gaming enthusiast!",
+        height: "165 cm",
+        weight: "50 kg",
+        education: "Graduate",
+        drinking: "Socially",
+        smoking: "Never",
+        lookingFor: "Duo Partner",
+        kids: "Someday",
+        politics: "Moderate",
+        discord: "calib#1234",
+        instagram: "calib_insta",
+      }
+    };
+    const updateRes = makeRes();
+    await updateProfile(updateReq, updateRes);
+    const result = await updateRes.promise;
+
+    if (result.statusCode !== 200) {
+      throw new Error(`updateProfile failed with status ${result.statusCode}: ${JSON.stringify(result.body)}`);
+    }
+
+    const updated = await User.findById(calibUser._id);
+    if (!updated.profileCompletedRewardClaimed) {
+      throw new Error("Expected profileCompletedRewardClaimed to be true!");
+    }
+    // Initial superLikesBalance was 1 + 1 reward = 2.
+    if (updated.superLikesBalance !== 2) {
+      throw new Error(`Expected superLikesBalance to be 2, got ${updated.superLikesBalance}`);
+    }
+
+    // Verify duplicate saves do not award additional super likes
+    const repeatRes = makeRes();
+    await updateProfile(updateReq, repeatRes);
+    const repeatUser = await User.findById(calibUser._id);
+    if (repeatUser.superLikesBalance !== 2) {
+      throw new Error(`Expected superLikesBalance to stay 2 on second save, got ${repeatUser.superLikesBalance}`);
+    }
+
+    console.log("✓ Test Case 7 Passed! 100% Calibration awarded 1 Free Super Like and prevented duplicate claiming.");
+  }
+
+  // -------------------------------------------------------------
+  // Test Case 8: 7-Day Daily Login Streak Bonus Swipes
+  // -------------------------------------------------------------
+  console.log("\n--- Running Test Case 8: 7-Day Login Streak Bonus Swipes ---");
+  {
+    const { processLoginStreak } = await import("./userHelper.js");
+
+    const streakUser = {
+      extraSwipesBalance: 0,
+      loginStreak: {
+        current: 6,
+        lastLoginDate: new Date(Date.now() - 24 * 60 * 60 * 1000), // yesterday
+        best: 6,
+      },
+    };
+
+    const res = processLoginStreak(streakUser);
+    if (!res.streakUpdated) throw new Error("Expected streak to update for consecutive day");
+    if (streakUser.loginStreak.current !== 7) throw new Error(`Expected streak current to be 7, got ${streakUser.loginStreak.current}`);
+    if (res.bonusAwarded !== 3) throw new Error(`Expected bonusAwarded to be 3, got ${res.bonusAwarded}`);
+    if (streakUser.extraSwipesBalance !== 3) throw new Error(`Expected extraSwipesBalance to be 3, got ${streakUser.extraSwipesBalance}`);
+
+    console.log("✓ Test Case 8 Passed! 7-Day streak successfully awarded +3 bonus swipes.");
   }
 
   console.log("\n=================================");
