@@ -72,6 +72,8 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
+import LoginHistory from "../../Models/loginHistory.schema.js";
+
 /**
  * Get User By ID
  * GET /api/admin/users/:id
@@ -79,12 +81,18 @@ export const getAllUsers = async (req, res) => {
 export const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await dbCommonQuery({
-      model: "User",
-      action: "findById",
-      filter: id,
-      lean: true,
-    });
+    const [user, recentLogins] = await Promise.all([
+      dbCommonQuery({
+        model: "User",
+        action: "findById",
+        filter: id,
+        lean: true,
+      }),
+      LoginHistory.find({ userId: id })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .lean(),
+    ]);
 
     if (!user) {
       return res.status(404).json({
@@ -95,7 +103,10 @@ export const getUserById = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      user: buildUserResponse(user),
+      user: {
+        ...buildUserResponse(user),
+        recentLogins: recentLogins || [],
+      },
     });
   } catch (error) {
     console.error("Get User By ID Error:", error);

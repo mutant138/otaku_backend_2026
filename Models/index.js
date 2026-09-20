@@ -14,6 +14,7 @@ import State from "./state.schema.js";
 import City from "./city.schema.js";
 import Blog from "./blog.schema.js";
 import Feedback from "./feedback.schema.js";
+import LoginHistory from "./loginHistory.schema.js";
 
 const modelsMap = {
   User,
@@ -32,6 +33,7 @@ const modelsMap = {
   City,
   Blog,
   Feedback,
+  LoginHistory,
 };
 
 export {
@@ -51,6 +53,7 @@ export {
   City,
   Blog,
   Feedback,
+  LoginHistory,
   modelsMap,
 };
 

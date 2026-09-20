@@ -5,13 +5,13 @@ import Razorpay from "razorpay";
 import dbCommonQuery from "../utils/dbCommonQuery.js";
 import { generateToken, generateUserId } from "../utils/jwt.js";
 import { sendEmail } from "../utils/email.js";
-import User from "../Models/user.schema.js";
 import {
   generateOTP,
   generateRandomUsername,
   buildUserResponse,
   processLoginStreak,
 } from "../utils/userHelper.js";
+import { recordLoginHistory } from "../utils/loginHistoryHelper.js";
 
 /**
  * Check if email is already registered and if it has a password set.
@@ -270,6 +270,15 @@ export const verifyOtp = async (req, res) => {
     processLoginStreak(user);
     await user.save();
 
+    // Record login history
+    recordLoginHistory(req, {
+      userId: user._id,
+      email: user.email,
+      username: user.username,
+      loginMethod: "otp",
+      status: "SUCCESS",
+    });
+
     const token = generateToken(user._id);
     return res.status(200).json({
       message: "Email verified successfully",
@@ -361,6 +370,12 @@ export const loginUser = async (req, res) => {
     });
 
     if (!user) {
+      recordLoginHistory(req, {
+        email: normalizedEmail,
+        loginMethod: "email",
+        status: "FAILED",
+        failReason: "User account not found",
+      });
       return res.status(400).json({ status: false, message: "Invalid email or password" });
     }
 
@@ -368,6 +383,15 @@ export const loginUser = async (req, res) => {
       const providers = [];
       if (user.googleId) providers.push("Google");
       if (user.discordId) providers.push("Discord");
+
+      recordLoginHistory(req, {
+        userId: user._id,
+        email: user.email,
+        username: user.username,
+        loginMethod: "email",
+        status: "FAILED",
+        failReason: "Account linked with social login only",
+      });
 
       return res.status(400).json({
         status: false,
@@ -378,6 +402,14 @@ export const loginUser = async (req, res) => {
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      recordLoginHistory(req, {
+        userId: user._id,
+        email: user.email,
+        username: user.username,
+        loginMethod: "email",
+        status: "FAILED",
+        failReason: "Incorrect password",
+      });
       return res.status(400).json({ status: false, message: "Invalid email or password" });
     }
 
@@ -422,6 +454,15 @@ export const loginUser = async (req, res) => {
     processLoginStreak(user);
     await user.save();
 
+    // Record successful login history
+    recordLoginHistory(req, {
+      userId: user._id,
+      email: user.email,
+      username: user.username,
+      loginMethod: "email",
+      status: "SUCCESS",
+    });
+
     const token = generateToken(user._id);
     return res.status(200).json({
       message: "Login successful",
@@ -453,6 +494,13 @@ export const oauthLoginOrSignup = async (req, res, next) => {
         }
 
         const token = generateToken(user._id);
+        recordLoginHistory(req, {
+          userId: user._id,
+          email: user.email,
+          username: user.username,
+          loginMethod: "google",
+          status: "SUCCESS",
+        });
         return res.status(200).json({
           status: true,
           message: "Google login successful",
@@ -571,6 +619,14 @@ export const oauthLoginOrSignup = async (req, res, next) => {
 
       processLoginStreak(user);
       await user.save();
+
+      recordLoginHistory(req, {
+        userId: user._id,
+        email: user.email,
+        username: user.username,
+        loginMethod: "discord",
+        status: "SUCCESS",
+      });
 
       const token = generateToken(user._id);
       return res.status(200).json({

@@ -11,6 +11,7 @@ import locationRoutes from "./location.admin.routes.js";
 import emailRoutes from "./email.admin.routes.js";
 import blogRoutes from "./blog.admin.routes.js";
 import feedbackRoutes from "./feedback.admin.routes.js";
+import loginHistoryRoutes from "./loginHistory.admin.routes.js";
 
 const router = express.Router();
 
@@ -26,5 +27,6 @@ router.use("/locations", locationRoutes);
 router.use("/emails", emailRoutes);
 router.use("/blogs", blogRoutes);
 router.use("/feedbacks", feedbackRoutes);
+router.use("/login-history", loginHistoryRoutes);
 
 export default router;
