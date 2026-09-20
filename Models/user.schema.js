@@ -132,12 +132,16 @@ const userSchema = new mongoose.Schema({
     animeFavorites: [{
       _id: false,
       ref: { type: mongoose.Schema.Types.ObjectId, ref: "AnimeTitle" },
-      title: { type: String },
+      title: { type: String, trim: true },
+      image: { type: String, trim: true },
+      isCustom: { type: Boolean, default: false },
     }],
     gameFavorites: [{
       _id: false,
       ref: { type: mongoose.Schema.Types.ObjectId, ref: "GameTitle" },
-      title: { type: String },
+      title: { type: String, trim: true },
+      image: { type: String, trim: true },
+      isCustom: { type: Boolean, default: false },
     }],
   },
   synergy: {
@@ -203,7 +207,12 @@ const userSchema = new mongoose.Schema({
     enum: ["user", "admin"],
     default: "user",
   },
+  refreshToken: {
+    type: String,
+    default: null,
+  },
   pushSubscriptions: [
+
     {
       endpoint: { type: String, required: true },
       expirationTime: { type: Date, default: null },

@@ -46,6 +46,7 @@ export const DEFAULT_PLANS = [
     durationDays: 7,
     benefits: [
       { text: "Unlimited Swipes", iconName: "FaBolt" },
+      { text: "Unlimited 1v1 Arena PvP Duels", iconName: "FaGamepad" },
       { text: "Spotlight Profile", iconName: "FaStar" },
       { text: "10 Messages per Week", iconName: "FaRocket" },
       { text: "5 Super Likes per Week", iconName: "FaFire" },
@@ -53,6 +54,7 @@ export const DEFAULT_PLANS = [
     complimentsRefill: 10,
     isPremium: true,
   },
+
 ];
 
 /**

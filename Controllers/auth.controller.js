@@ -3,8 +3,9 @@ import passport from "passport";
 import axios from "axios";
 import Razorpay from "razorpay";
 import dbCommonQuery from "../utils/dbCommonQuery.js";
-import { generateToken, generateUserId } from "../utils/jwt.js";
+import { generateAuthTokens, verifyRefreshToken, generateUserId } from "../utils/jwt.js";
 import { sendEmail } from "../utils/email.js";
+import User from "../Models/user.schema.js";
 import {
   generateOTP,
   generateRandomUsername,
@@ -279,11 +280,15 @@ export const verifyOtp = async (req, res) => {
       status: "SUCCESS",
     });
 
-    const token = generateToken(user._id);
+    const { token, refreshToken } = generateAuthTokens(user._id);
+    user.refreshToken = refreshToken;
+    await user.save();
+
     return res.status(200).json({
       message: "Email verified successfully",
       user: buildUserResponse(user),
       token,
+      refreshToken,
       status: true,
     });
   } catch (error) {
@@ -463,11 +468,15 @@ export const loginUser = async (req, res) => {
       status: "SUCCESS",
     });
 
-    const token = generateToken(user._id);
+    const { token, refreshToken } = generateAuthTokens(user._id);
+    user.refreshToken = refreshToken;
+    await user.save();
+
     return res.status(200).json({
       message: "Login successful",
       user: buildUserResponse(user),
       token,
+      refreshToken,
       status: true,
     });
   } catch (error) {
@@ -493,7 +502,9 @@ export const oauthLoginOrSignup = async (req, res, next) => {
           return res.status(401).json({ status: false, message: info?.message || "Google Authentication failed" });
         }
 
-        const token = generateToken(user._id);
+        const { token, refreshToken } = generateAuthTokens(user._id);
+        await User.findByIdAndUpdate(user._id, { refreshToken });
+
         recordLoginHistory(req, {
           userId: user._id,
           email: user.email,
@@ -506,6 +517,7 @@ export const oauthLoginOrSignup = async (req, res, next) => {
           message: "Google login successful",
           user: buildUserResponse(user),
           token,
+          refreshToken,
         });
       })(req, res, next);
     } else if (provider === "discord") {
@@ -628,12 +640,16 @@ export const oauthLoginOrSignup = async (req, res, next) => {
         status: "SUCCESS",
       });
 
-      const token = generateToken(user._id);
+      const { token, refreshToken } = generateAuthTokens(user._id);
+      user.refreshToken = refreshToken;
+      await user.save();
+
       return res.status(200).json({
         status: true,
         message: "Discord login successful",
         user: buildUserResponse(user),
         token,
+        refreshToken,
       });
     } else {
       return res.status(400).json({ status: false, message: "Invalid OAuth provider" });
@@ -925,3 +941,60 @@ export const getMe = async (req, res) => {
     return res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
+
+/**
+ * Refresh access token using a valid Refresh Token (with token rotation)
+ * Route: POST /api/user/refresh-token
+ */
+export const refreshToken = async (req, res) => {
+  try {
+    const { refreshToken: incomingRefreshToken } = req.body;
+    if (!incomingRefreshToken) {
+      return res.status(400).json({ status: false, message: "Refresh token is required" });
+    }
+
+    const decoded = verifyRefreshToken(incomingRefreshToken);
+    if (!decoded || !decoded.id) {
+      return res.status(401).json({ status: false, message: "Invalid or expired refresh token" });
+    }
+
+    const user = await User.findById(decoded.id);
+    if (!user || !user.refreshToken || user.refreshToken !== incomingRefreshToken) {
+      return res.status(401).json({ status: false, message: "Refresh token is invalid or has been revoked" });
+    }
+
+    // Token rotation: issue fresh access token and fresh refresh token
+    const tokens = generateAuthTokens(user._id);
+    user.refreshToken = tokens.refreshToken;
+    await user.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Token refreshed successfully",
+      token: tokens.token,
+      refreshToken: tokens.refreshToken,
+      user: buildUserResponse(user),
+    });
+  } catch (error) {
+    console.error("Refresh Token Error:", error);
+    return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * Invalidate user session and revoke refresh token
+ * Route: POST /api/user/logout
+ */
+export const logoutUser = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+    if (userId) {
+      await User.findByIdAndUpdate(userId, { refreshToken: null });
+    }
+    return res.status(200).json({ status: true, message: "Logged out successfully" });
+  } catch (error) {
+    console.error("Logout Error:", error);
+    return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+

@@ -30,12 +30,17 @@ router.post("/register", validate(registerSchema), userController.registerUser);
 router.post("/verify-otp", validate(verifyOtpSchema), userController.verifyOtp);
 router.post("/resend-otp", validate(resendOtpSchema), userController.resendOtp);
 router.post("/login", validate(loginSchema), userController.loginUser);
+router.post("/refresh-token", userController.refreshToken);
+router.post("/logout", authMiddleware.protect, userController.logoutUser);
 router.post("/forgot-password", validate(forgotPasswordSchema), userController.forgotPassword);
+
 router.post("/reset-password", validate(resetPasswordSchema), userController.resetPassword);
 router.post("/oauth", validate(oauthSchema), userController.oauthLoginOrSignup);
 router.post("/onboard", authMiddleware.protect, validate(onboardSchema), userController.onboardUser);
 router.get("/generate-username", authMiddleware.protect, userController.generateUsername);
 router.get("/metadata", authMiddleware.protect, userController.getMetadata);
+router.get("/search/anime", authMiddleware.protect, userController.searchAnimeTitles);
+router.get("/search/games", authMiddleware.protect, userController.searchGameTitles);
 router.get("/me", authMiddleware.protect, userController.getMe);
 router.put("/update-profile", authMiddleware.protect, validate(updateProfileSchema), userController.updateProfile);
 router.post("/upload-avatar", authMiddleware.protect, upload.single("avatar"), userController.uploadAvatar);

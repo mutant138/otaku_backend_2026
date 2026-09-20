@@ -1,8 +1,14 @@
 import path from "path";
 import fs from "fs";
 import mongoose from "mongoose";
+import axios from "axios";
 import dbCommonQuery from "../utils/dbCommonQuery.js";
 import { buildUserResponse, buildPublicUserResponse } from "../utils/userHelper.js";
+import { COMPLETE_ANIME_CATALOG, COMPLETE_GAME_CATALOG } from "../utils/seedCompleteCatalog.js";
+
+// Curated catalogs for instant sub-millisecond search & resilience
+const POPULAR_ANIME_INDEX = COMPLETE_ANIME_CATALOG;
+const POPULAR_GAMES_INDEX = COMPLETE_GAME_CATALOG;
 
 /**
  * Onboard user preferences.
@@ -21,19 +27,91 @@ export const onboardUser = async (req, res) => {
       return res.status(400).json({ status: false, message: "Onboarding preferences are required" });
     }
 
-    const [animeGenreDocs, gameGenreDocs, animeFavDocs, gameFavDocs] = await Promise.all([
+    const [animeGenreDocs, gameGenreDocs] = await Promise.all([
       dbCommonQuery({ model: "AnimeCategory", action: "find", filter: { _id: { $in: preferences.animeGenres || [] } }, lean: true }),
       dbCommonQuery({ model: "GameCategory", action: "find", filter: { _id: { $in: preferences.gameGenres || [] } }, lean: true }),
-      dbCommonQuery({ model: "AnimeTitle", action: "find", filter: { _id: { $in: preferences.animeFavorites || [] } }, lean: true }),
-      dbCommonQuery({ model: "GameTitle", action: "find", filter: { _id: { $in: preferences.gameFavorites || [] } }, lean: true }),
     ]);
+
+    // Parse dynamic & preloaded anime favorites
+    const rawAnimeFavs = preferences.animeFavorites || [];
+    const validAnimeIds = rawAnimeFavs.filter(
+      (item) => typeof item === "string" && mongoose.Types.ObjectId.isValid(item)
+    );
+    const animeFavDocs =
+      validAnimeIds.length > 0
+        ? await dbCommonQuery({
+            model: "AnimeTitle",
+            action: "find",
+            filter: { _id: { $in: validAnimeIds } },
+            lean: true,
+          })
+        : [];
+    const animeIdToDoc = new Map(animeFavDocs.map((d) => [d._id.toString(), d]));
+
+    const formattedAnimeFavorites = rawAnimeFavs
+      .map((item) => {
+        if (typeof item === "string") {
+          if (animeIdToDoc.has(item)) {
+            const doc = animeIdToDoc.get(item);
+            return { ref: doc._id, title: doc.title, image: doc.image || "" };
+          }
+          return { title: item.trim(), isCustom: true };
+        }
+        if (typeof item === "object" && item !== null) {
+          return {
+            ref: item.ref && mongoose.Types.ObjectId.isValid(item.ref) ? item.ref : undefined,
+            title: item.title ? item.title.trim() : "Anime Title",
+            image: item.image || "",
+            isCustom: !item.ref,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    // Parse dynamic & preloaded game favorites
+    const rawGameFavs = preferences.gameFavorites || [];
+    const validGameIds = rawGameFavs.filter(
+      (item) => typeof item === "string" && mongoose.Types.ObjectId.isValid(item)
+    );
+    const gameFavDocs =
+      validGameIds.length > 0
+        ? await dbCommonQuery({
+            model: "GameTitle",
+            action: "find",
+            filter: { _id: { $in: validGameIds } },
+            lean: true,
+          })
+        : [];
+    const gameIdToDoc = new Map(gameFavDocs.map((d) => [d._id.toString(), d]));
+
+    const formattedGameFavorites = rawGameFavs
+      .map((item) => {
+        if (typeof item === "string") {
+          if (gameIdToDoc.has(item)) {
+            const doc = gameIdToDoc.get(item);
+            return { ref: doc._id, title: doc.title, image: doc.image || "" };
+          }
+          return { title: item.trim(), isCustom: true };
+        }
+        if (typeof item === "object" && item !== null) {
+          return {
+            ref: item.ref && mongoose.Types.ObjectId.isValid(item.ref) ? item.ref : undefined,
+            title: item.title ? item.title.trim() : "Game Title",
+            image: item.image || "",
+            isCustom: !item.ref,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
 
     const formattedPreferences = {
       path: preferences.path,
       animeGenres: animeGenreDocs.map((doc) => ({ ref: doc._id, name: doc.name, slug: doc.slug })),
       gameGenres: gameGenreDocs.map((doc) => ({ ref: doc._id, name: doc.name, slug: doc.slug })),
-      animeFavorites: animeFavDocs.map((doc) => ({ ref: doc._id, title: doc.title })),
-      gameFavorites: gameFavDocs.map((doc) => ({ ref: doc._id, title: doc.title })),
+      animeFavorites: formattedAnimeFavorites,
+      gameFavorites: formattedGameFavorites,
     };
 
     const updatedUser = await dbCommonQuery({
@@ -55,6 +133,211 @@ export const onboardUser = async (req, res) => {
   } catch (error) {
     console.error("Onboarding Error:", error);
     return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * Live Dynamic Anime Search (Local DB + Jikan MyAnimeList API)
+ * Route: GET /api/user/search/anime
+ */
+export const searchAnimeTitles = async (req, res) => {
+  try {
+    const q = (req.query.q || "").trim();
+
+    if (!q) {
+      const defaultTitles = await dbCommonQuery({
+        model: "AnimeTitle",
+        action: "find",
+        filter: {},
+        limit: 12,
+        lean: true,
+      });
+      return res.status(200).json({
+        status: true,
+        results: defaultTitles.map((t) => ({
+          _id: t._id,
+          title: t.title,
+          image: t.image || "",
+          source: "database",
+        })),
+      });
+    }
+
+    const regex = new RegExp(q, "i");
+    const [localResults, jikanResponse] = await Promise.allSettled([
+      dbCommonQuery({
+        model: "AnimeTitle",
+        action: "find",
+        filter: {
+          $or: [
+            { title: regex },
+            { aliases: regex },
+            { genres: regex },
+          ],
+        },
+        limit: 12,
+        lean: true,
+      }),
+      axios.get(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=10&sfw=true`, {
+        timeout: 2500,
+        headers: { "User-Agent": "OtakuDuo-App/1.0" },
+      }),
+    ]);
+
+    const results = [];
+    const seenTitles = new Set();
+
+    if (localResults.status === "fulfilled" && Array.isArray(localResults.value)) {
+      for (const item of localResults.value) {
+        seenTitles.add(item.title.toLowerCase().trim());
+        results.push({
+          _id: item._id,
+          title: item.title,
+          image: item.image || "",
+          year: item.year,
+          genres: item.genres || [],
+          score: item.score,
+          source: "database",
+        });
+      }
+    }
+
+    if (jikanResponse.status === "fulfilled" && jikanResponse.value?.data?.data) {
+      for (const anime of jikanResponse.value.data.data) {
+        const titleStr = anime.title_english || anime.title;
+        if (titleStr && !seenTitles.has(titleStr.toLowerCase().trim())) {
+          seenTitles.add(titleStr.toLowerCase().trim());
+          results.push({
+            title: titleStr,
+            image: anime.images?.jpg?.image_url || anime.images?.webp?.image_url || "",
+            year: anime.year,
+            genres: (anime.genres || []).map((g) => g.name),
+            score: anime.score,
+            source: "jikan",
+          });
+        }
+      }
+    }
+
+    // Blend curated popular anime index for high quality instant matching (checking aliases)
+    for (const anime of POPULAR_ANIME_INDEX) {
+      const isMatch =
+        regex.test(anime.title) ||
+        (Array.isArray(anime.aliases) && anime.aliases.some((a) => regex.test(a))) ||
+        (Array.isArray(anime.genres) && anime.genres.some((g) => regex.test(g)));
+
+      if (isMatch && !seenTitles.has(anime.title.toLowerCase().trim())) {
+        seenTitles.add(anime.title.toLowerCase().trim());
+        results.push({
+          title: anime.title,
+          image: anime.image,
+          year: anime.year,
+          genres: anime.genres,
+          score: anime.score,
+          source: "index",
+        });
+      }
+    }
+
+    return res.status(200).json({
+      status: true,
+      results,
+    });
+  } catch (error) {
+    console.error("Search Anime Error:", error);
+    return res.status(500).json({ status: false, message: "Failed to search anime titles" });
+  }
+};
+
+/**
+ * Live Dynamic Game Search (Local DB + Popular Index)
+ * Route: GET /api/user/search/games
+ */
+export const searchGameTitles = async (req, res) => {
+  try {
+    const q = (req.query.q || "").trim();
+
+    if (!q) {
+      const defaultTitles = await dbCommonQuery({
+        model: "GameTitle",
+        action: "find",
+        filter: {},
+        limit: 12,
+        lean: true,
+      });
+      return res.status(200).json({
+        status: true,
+        results: defaultTitles.map((t) => ({
+          _id: t._id,
+          title: t.title,
+          image: t.image || "",
+          source: "database",
+        })),
+      });
+    }
+
+    const regex = new RegExp(q, "i");
+    const [localResults] = await Promise.allSettled([
+      dbCommonQuery({
+        model: "GameTitle",
+        action: "find",
+        filter: {
+          $or: [
+            { title: regex },
+            { aliases: regex },
+            { genres: regex },
+          ],
+        },
+        limit: 12,
+        lean: true,
+      }),
+    ]);
+
+    const results = [];
+    const seenTitles = new Set();
+
+    if (localResults.status === "fulfilled" && Array.isArray(localResults.value)) {
+      for (const item of localResults.value) {
+        seenTitles.add(item.title.toLowerCase().trim());
+        results.push({
+          _id: item._id,
+          title: item.title,
+          image: item.image || "",
+          year: item.year,
+          genres: item.genres || [],
+          score: item.score,
+          source: "database",
+        });
+      }
+    }
+
+    // Blend curated popular games index for high quality instant matching (checking aliases)
+    for (const game of POPULAR_GAMES_INDEX) {
+      const isMatch =
+        regex.test(game.title) ||
+        (Array.isArray(game.aliases) && game.aliases.some((a) => regex.test(a))) ||
+        (Array.isArray(game.genres) && game.genres.some((g) => regex.test(g)));
+
+      if (isMatch && !seenTitles.has(game.title.toLowerCase().trim())) {
+        seenTitles.add(game.title.toLowerCase().trim());
+        results.push({
+          title: game.title,
+          image: game.image,
+          genres: game.genres,
+          score: game.score,
+          year: game.year,
+          source: "index",
+        });
+      }
+    }
+
+    return res.status(200).json({
+      status: true,
+      results,
+    });
+  } catch (error) {
+    console.error("Search Games Error:", error);
+    return res.status(500).json({ status: false, message: "Failed to search game titles" });
   }
 };
 

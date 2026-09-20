@@ -8,6 +8,8 @@ import connectDB from "./db.js";
 import userRoutes from "./Routes/user.routes.js";
 import adminRoutes from "./Routes/admin/index.js";
 import publicRoutes from "./Routes/public.routes.js";
+import quizRoutes from "./Routes/quiz.routes.js";
+import duelRoutes from "./Routes/duel.routes.js";
 import { initSocket } from "./socket/socket.js";
 import passport from "./config/passport.js";
 import { ensureWelcomeBot, startWelcomeBotScheduler } from "./utils/seedWelcomeBot.js";
@@ -122,6 +124,8 @@ app.use(passport.initialize());
 // Routes
 app.use("/api/user", userRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/quiz", quizRoutes);
+app.use("/api/duel", duelRoutes);
 app.use("/api", publicRoutes);
 
 app.get("/", (req, res) => {

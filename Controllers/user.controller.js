@@ -23,6 +23,9 @@ export const forgotPassword = authController.forgotPassword;
 export const resetPassword = authController.resetPassword;
 export const generateUsername = authController.generateUsername;
 export const getMe = authController.getMe;
+export const refreshToken = authController.refreshToken;
+export const logoutUser = authController.logoutUser;
+
 
 // Re-export Profile Controller methods
 export const onboardUser = profileController.onboardUser;
@@ -35,6 +38,8 @@ export const getCountries = profileController.getCountries;
 export const getStates = profileController.getStates;
 export const getCities = profileController.getCities;
 export const getUserProfile = profileController.getUserProfile;
+export const searchAnimeTitles = profileController.searchAnimeTitles;
+export const searchGameTitles = profileController.searchGameTitles;
 
 // Re-export Matchmaking Controller methods
 export const getCandidates = matchmakingController.getCandidates;
@@ -69,6 +74,8 @@ export default {
   resetPassword,
   generateUsername,
   getMe,
+  refreshToken,
+  logoutUser,
   onboardUser,
   getMetadata,
   updateProfile,
@@ -79,6 +86,8 @@ export default {
   getStates,
   getCities,
   getUserProfile,
+  searchAnimeTitles,
+  searchGameTitles,
   getCandidates,
   swipeUser,
   reportUser,
@@ -98,3 +107,4 @@ export default {
   unsubscribePush,
   sendTestPush,
 };
+

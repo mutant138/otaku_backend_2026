@@ -15,6 +15,8 @@ import City from "./city.schema.js";
 import Blog from "./blog.schema.js";
 import Feedback from "./feedback.schema.js";
 import LoginHistory from "./loginHistory.schema.js";
+import QuizQuestion from "./quizQuestion.schema.js";
+import DuelHistory from "./duelHistory.schema.js";
 
 const modelsMap = {
   User,
@@ -34,6 +36,8 @@ const modelsMap = {
   Blog,
   Feedback,
   LoginHistory,
+  QuizQuestion,
+  DuelHistory,
 };
 
 export {
@@ -54,6 +58,8 @@ export {
   Blog,
   Feedback,
   LoginHistory,
+  QuizQuestion,
+  DuelHistory,
   modelsMap,
 };
 
