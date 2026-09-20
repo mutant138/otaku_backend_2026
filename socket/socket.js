@@ -82,3 +82,12 @@ export const sendRealtimeNotification = (userId, notification) => {
   return true;
 };
 
+export const sendRealtimeSwipeSync = (userId, data) => {
+  if (!io) return false;
+  const userRoom = `user:${userId.toString()}`;
+  io.to(userRoom).emit("card_swiped", data);
+  console.log(`Emitted real-time card swipe sync to room ${userRoom}`);
+  return true;
+};
+
+

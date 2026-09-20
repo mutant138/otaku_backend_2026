@@ -1,5 +1,6 @@
 import dbCommonQuery from "../utils/dbCommonQuery.js";
 import { buildPublicUserResponse } from "../utils/userHelper.js";
+import { sendRealtimeSwipeSync } from "../socket/socket.js";
 
 /**
  * Scan & discover candidates for player matches.
@@ -326,6 +327,18 @@ export const swipeUser = async (req, res) => {
     }
 
     const newSwipesLeft = hasSubscription ? 9999 : Math.max(0, 5 - (todaySwipesCount + 1)) + (user.extraSwipesBalance || 0);
+
+    // Sync card swipe in real-time across all user's active devices
+    try {
+      sendRealtimeSwipeSync(swiperId, {
+        swipeeId: swipeeId.toString(),
+        swipeType,
+        swipesLeft: newSwipesLeft,
+        resetTime,
+      });
+    } catch (syncErr) {
+      console.error("Realtime swipe sync emission failed:", syncErr);
+    }
 
     return res.status(201).json({
       status: true,
