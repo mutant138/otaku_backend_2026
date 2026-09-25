@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import { initDuelSocketHandlers } from "./duelManager.js";
+import { initWordDuelSocketHandlers } from "./wordDuelManager.js";
 
 let io;
 
@@ -51,6 +52,7 @@ export const initSocket = (server) => {
 
     // Attach 1v1 PvP Duel event handlers
     initDuelSocketHandlers(io, socket);
+    initWordDuelSocketHandlers(io, socket);
 
     // Dynamic token renewal on live socket connection
     socket.on("auth_refresh_token", (data = {}) => {

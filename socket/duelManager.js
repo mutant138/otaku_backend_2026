@@ -19,7 +19,7 @@ const pendingMatches = new Map();
  * Male players are paired with attractive Female Personas
  * Female players are paired with cool Male Personas
  */
-const BOT_PERSONAS = {
+export const BOT_PERSONAS = {
   female: [
     {
       username: "Sakura_Chan99",
@@ -145,7 +145,7 @@ const userLastBotMap = new Map();
 /**
  * Retrieve or create a genuine MongoDB user document for a bot persona with rotation memory
  */
-async function getOrCreateBotUser(targetGender = "female", playerPreferences = {}, playerUserId = null) {
+export async function getOrCreateBotUser(targetGender = "female", playerPreferences = {}, playerUserId = null) {
   const pool = BOT_PERSONAS[targetGender] || BOT_PERSONAS.female;
   const lastBotName = playerUserId ? userLastBotMap.get(playerUserId.toString()) : null;
 

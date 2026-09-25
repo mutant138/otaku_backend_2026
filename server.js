@@ -19,9 +19,9 @@ import mongoose from "mongoose";
 import morgan from "morgan";
 
 dotenv.config();
-// import dns from "dns";
+import dns from "dns";
 
-// dns.setServers(["1.1.1.1", "1.0.0.1"]);
+dns.setServers(["1.1.1.1", "1.0.0.1"]);
 const app = express();
 app.set("trust proxy", 1);
 // Apply security headers (allow cross-origin resource sharing for static files)
