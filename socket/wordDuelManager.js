@@ -225,8 +225,8 @@ export function initWordDuelSocketHandlers(io, socket) {
     if (pending.player1Accepted && pending.player2Accepted) {
       clearTimeout(pending.acceptanceTimer);
       pendingWordMatches.delete(roomId);
-      // Trigger 5-second live role selection phase!
-      startWordRoleSelectionPhase(io, roomId, pending.player1, pending.player2);
+      // Directly assign random roles (one Setter, other Guesser) and launch countdown
+      startWordGameDirectly(io, roomId, pending.player1, pending.player2);
     }
   });
 
@@ -381,14 +381,52 @@ export function initWordDuelSocketHandlers(io, socket) {
     executeWordGuess(io, room, cleanGuess);
   });
 
-  // ─── 9. REMATCH REQUEST ───
+  // ─── 9. FORFEIT / SURRENDER ───
+  socket.on("word_forfeit", ({ roomId }) => {
+    // Check pending matches
+    const pending = pendingWordMatches.get(roomId);
+    if (pending) {
+      clearTimeout(pending.acceptanceTimer);
+      pendingWordMatches.delete(roomId);
+      io.to(roomId).emit("word_opponent_forfeited", {
+        message: "Opponent left the match.",
+      });
+      return;
+    }
+
+    // Check active rooms
+    const room = activeWordRooms.get(roomId);
+    if (!room) return;
+
+    if (room.roleTimer) clearTimeout(room.roleTimer);
+    if (room.botGuessTimer) clearTimeout(room.botGuessTimer);
+    if (room.botSetTimer) clearTimeout(room.botSetTimer);
+
+    const p1Id = room.player1?.userId?.toString();
+    const myId = userId?.toString();
+    const isPlayer1 = p1Id === myId;
+    const forfeitingPlayer = isPlayer1 ? room.player1 : room.player2;
+    const remainingPlayer = isPlayer1 ? room.player2 : room.player1;
+
+    console.log(`[Word Duel Forfeit] ${forfeitingPlayer?.username} forfeited room ${roomId}`);
+
+    io.to(roomId).emit("word_opponent_forfeited", {
+      forfeiterUsername: forfeitingPlayer?.username,
+      winnerUsername: remainingPlayer?.username,
+      message: `${forfeitingPlayer?.username || "Opponent"} forfeited and exited the duel.`,
+    });
+
+    activeWordRooms.delete(roomId);
+  });
+
+  // ─── 10. REMATCH REQUEST ───
   socket.on("word_rematch", ({ roomId }) => {
     const room = activeWordRooms.get(roomId);
     if (!room) return;
 
     if (room.player2.isBot) {
       activeWordRooms.delete(roomId);
-      startWordRoleSelectionPhase(
+      startWordGameDirectly(
         io,
         roomId,
         { userId: room.player1.userId, user: room.player1, socketId: socket.id },
@@ -401,7 +439,7 @@ export function initWordDuelSocketHandlers(io, socket) {
     }
   });
 
-  // ─── 10. DISCONNECT ───
+  // ─── 11. DISCONNECT ───
   socket.on("disconnect", () => {
     removeWordFromQueue(userId);
 
@@ -498,22 +536,26 @@ function createWordMatchFoundPrompt(io, player1, player2) {
       if (p.player1Accepted && p.player2Accepted) {
         clearTimeout(p.acceptanceTimer);
         pendingWordMatches.delete(roomId);
-        startWordRoleSelectionPhase(io, roomId, p.player1, p.player2);
+        startWordGameDirectly(io, roomId, p.player1, p.player2);
       }
     }, 1200);
   }
 }
 
 /**
- * Start 5-Second Role Selection Phase (Setter vs Guesser)
- * First player to click an option claims it; other player gets the opposite!
- * If 5s expires without selection, randomly assigned.
+ * Directly start word game with randomly assigned roles (Setter vs Guesser)
+ * No waiting for role selection! One player randomly gets Setter, the other gets Guesser.
  */
-function startWordRoleSelectionPhase(io, roomId, player1, player2) {
+function startWordGameDirectly(io, roomId, player1, player2) {
+  // Randomly assign one player as setter, the other as guesser
+  const p1IsSetter = Math.random() < 0.5;
+  const setterPlayer = p1IsSetter ? player1 : player2;
+  const guesserPlayer = p1IsSetter ? player2 : player1;
+
   const room = {
     roomId,
     player1: {
-      userId: player1.userId,
+      userId: player1.userId.toString(),
       username: player1.user.username,
       avatar: player1.user.avatar,
       synergy: player1.user.synergy || 0,
@@ -525,7 +567,7 @@ function startWordRoleSelectionPhase(io, roomId, player1, player2) {
       isSolved: false,
     },
     player2: {
-      userId: player2.userId,
+      userId: player2.userId.toString(),
       username: player2.user.username,
       avatar: player2.user.avatar,
       synergy: player2.user.synergy || 0,
@@ -536,80 +578,34 @@ function startWordRoleSelectionPhase(io, roomId, player1, player2) {
       guesses: [],
       isSolved: false,
     },
-    setterUserId: null,
-    guesserUserId: null,
+    setterUserId: setterPlayer.userId.toString(),
+    guesserUserId: guesserPlayer.userId.toString(),
     setter: null,
     guesser: null,
     secretWord: null,
-    status: "role_selection",
+    status: "role_locked",
     roleTimer: null,
     botSetTimer: null,
     botGuessTimer: null,
   };
 
+  room.setter = room.player1.userId === room.setterUserId ? room.player1 : room.player2;
+  room.guesser = room.player1.userId === room.guesserUserId ? room.player1 : room.player2;
+
   activeWordRooms.set(roomId, room);
 
-  // Broadcast 5-second role selection event
-  io.to(roomId).emit("word_role_selection_start", {
-    roomId,
-    timeLimitSeconds: 5,
-    player1: { userId: room.player1.userId, username: room.player1.username },
-    player2: { userId: room.player2.userId, username: room.player2.username },
-  });
-
-  // Start 5-second server countdown for role pick
-  room.roleTimer = setTimeout(() => {
-    const cur = activeWordRooms.get(roomId);
-    if (!cur || cur.status !== "role_selection") return;
-
-    // Randomly assign roles if 5 seconds elapsed without pick
-    const p1IsSetter = Math.random() < 0.5;
-    const setterUserId = p1IsSetter ? cur.player1.userId : cur.player2.userId;
-    const guesserUserId = p1IsSetter ? cur.player2.userId : cur.player1.userId;
-
-    console.log(
-      `[Word Duel Role Timeout] 5s elapsed. Randomly assigning: Setter=${setterUserId}, Guesser=${guesserUserId}`
-    );
-
-    assignRolesAndStartGame(
-      io,
-      roomId,
-      setterUserId,
-      guesserUserId,
-      null,
-      "random"
-    );
-  }, 5000);
-}
-
-/**
- * Assign roles, notify players, and transition into game countdown & secret setting
- */
-function assignRolesAndStartGame(io, roomId, setterUserId, guesserUserId, pickedByUsername, chosenRole) {
-  const room = activeWordRooms.get(roomId);
-  if (!room) return;
-
-  const sId = setterUserId.toString();
-  const gId = guesserUserId.toString();
-  room.setterUserId = sId;
-  room.guesserUserId = gId;
-  room.setter = room.player1.userId.toString() === sId ? room.player1 : room.player2;
-  room.guesser = room.player1.userId.toString() === gId ? room.player1 : room.player2;
-  room.status = "role_locked";
-
   console.log(
-    `[Word Duel Role Assigned] Room ${roomId} => Setter: ${room.setter.username} (${sId}), Guesser: ${room.guesser.username} (${gId})`
+    `[Word Duel Direct Start] Room ${roomId} => Randomly Assigned: Setter=${room.setter.username} (${room.setterUserId}), Guesser=${room.guesser.username} (${room.guesserUserId})`
   );
 
-  // Notify each player with THEIR exact assigned role directly to their socket
   const baseLockedData = {
     roomId,
-    setterUserId: sId,
+    setterUserId: room.setterUserId,
     setterUsername: room.setter.username,
-    guesserUserId: gId,
+    guesserUserId: room.guesserUserId,
     guesserUsername: room.guesser.username,
-    pickedByUsername,
-    chosenRole,
+    pickedByUsername: null,
+    chosenRole: "random",
   };
 
   if (room.setter.socketId) {
@@ -626,7 +622,7 @@ function assignRolesAndStartGame(io, roomId, setterUserId, guesserUserId, picked
     });
   }
 
-  // After 1.5 seconds visual feedback, proceed to 3s countdown & setting
+  // Directly transition into 3s battle countdown after brief 500ms role broadcast
   setTimeout(() => {
     const active = activeWordRooms.get(roomId);
     if (!active) return;
@@ -709,7 +705,7 @@ function assignRolesAndStartGame(io, roomId, setterUserId, guesserUserId, picked
         }, 1500);
       }
     }, 3200);
-  }, 1500);
+  }, 500);
 }
 
 /**
