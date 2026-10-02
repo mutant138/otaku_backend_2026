@@ -7,33 +7,7 @@ import { generateUserId } from "../utils/jwt.js";
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-const ANIME_PREFIXES = [
-  "Shinobi", "Saiyan", "Ghoul", "Titan", "Jujutsu", "Hokage", "Bankai", "Tsundere", "Yandere", "Senpai",
-  "Kouhai", "Otaku", "Weeb", "Chibi", "Neko", "Kawaii", "Shounen", "Shojo", "Isekai", "Nakama",
-  "Jutsu", "Sharingan", "Rasengan", "Kamehameha", "DeathNote", "Geass", "StrawHat", "Goku", "Naruto", "Luffy"
-];
-
-const GAME_SUFFIXES = [
-  "Gamer", "Pixel", "Glitch", "Mage", "Rogue", "Paladin", "Warrior", "Healer", "Sniper", "Camper",
-  "Noob", "Pro", "Speedrunner", "Controller", "Joystick", "Quest", "Boss", "NPC", "Frag", "Guild",
-  "Loot", "Spawn", "Respawn", "Mana", "Stealth", "Modder", "Arcade", "Console", "Steam", "Xbox"
-];
-
-const generateRandomUsername = async () => {
-  let isUnique = false;
-  let username = "";
-  while (!isUnique) {
-    const prefix = ANIME_PREFIXES[Math.floor(Math.random() * ANIME_PREFIXES.length)];
-    const suffix = GAME_SUFFIXES[Math.floor(Math.random() * GAME_SUFFIXES.length)];
-    const randomNum = Math.floor(100 + Math.random() * 900);
-    username = `${prefix}${suffix}${randomNum}`;
-    const existing = await User.findOne({ username });
-    if (!existing) {
-      isUnique = true;
-    }
-  }
-  return username;
-};
+import { generateRandomUsername } from "../utils/userHelper.js";
 
 passport.use(
   "google-id-token",

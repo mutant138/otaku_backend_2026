@@ -86,12 +86,39 @@ export async function getPlayerDuelStats(req, res) {
 }
 
 /**
- * Get Global Duel Leaderboard (Top PvP champions)
+ * Get Global Duel Leaderboard (Top PvP champions ranked by account Synergy)
  */
 export async function getDuelLeaderboard(req, res) {
   try {
-    const leaderboard = await DuelHistory.aggregate([
-      { $match: { winner: { $ne: null } } },
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(50, parseInt(req.query.limit, 10) || 10));
+    const skip = (page - 1) * limit;
+
+    const filter = {
+      isBot: { $ne: true },
+      username: { $exists: true, $ne: "" },
+    };
+
+    const totalUsers = await User.countDocuments(filter);
+    const totalPages = Math.ceil(totalUsers / limit) || 1;
+
+    // Fetch top users sorted by synergy descending, then createdAt ascending
+    const users = await User.find(filter)
+      .select("username profilePics avatar synergy activeSubscription createdAt")
+      .sort({ synergy: -1, createdAt: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Collect user IDs to lookup duel wins in batch
+    const userIds = users.map((u) => u._id);
+
+    const winCounts = await DuelHistory.aggregate([
+      {
+        $match: {
+          winner: { $in: userIds },
+        },
+      },
       {
         $group: {
           _id: "$winner",
@@ -99,45 +126,42 @@ export async function getDuelLeaderboard(req, res) {
           totalScore: { $sum: { $max: ["$player1Score", "$player2Score"] } },
         },
       },
-      { $sort: { wins: -1, totalScore: -1 } },
-      { $limit: 20 },
-      {
-        $lookup: {
-          from: "users",
-          localField: "_id",
-          foreignField: "_id",
-          as: "player",
-        },
-      },
-      { $unwind: "$player" },
-      // Never show bot accounts on the leaderboard, only genuine human players
-      {
-        $match: {
-          "player.isBot": { $ne: true },
-        },
-      },
-      {
-        $project: {
-          _id: 1,
-          wins: 1,
-          totalScore: 1,
-          synergy: { $ifNull: ["$player.synergy", 0] },
-          username: "$player.username",
-          avatar: { $arrayElemAt: ["$player.profilePics", 0] },
-          hasPass: {
-            $cond: [
-              { $gt: ["$player.activeSubscription.expiresAt", new Date()] },
-              true,
-              false,
-            ],
-          },
-        },
-      },
     ]);
+
+    const winMap = new Map();
+    for (const w of winCounts) {
+      winMap.set(w._id.toString(), { wins: w.wins, totalScore: w.totalScore });
+    }
+
+    const leaderboard = users.map((u, idx) => {
+      const stats = winMap.get(u._id.toString()) || { wins: 0, totalScore: 0 };
+      const hasPass =
+        u.activeSubscription?.expiresAt &&
+        new Date(u.activeSubscription.expiresAt) > new Date();
+
+      return {
+        _id: u._id,
+        rank: skip + idx + 1,
+        username: u.username || "Player",
+        avatar: u.profilePics?.[0] || u.avatar || "",
+        synergy: u.synergy || 0,
+        wins: stats.wins,
+        totalScore: stats.totalScore,
+        hasPass: !!hasPass,
+      };
+    });
 
     return res.status(200).json({
       status: true,
       leaderboard,
+      pagination: {
+        page,
+        limit,
+        totalPages,
+        totalUsers,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
     });
   } catch (err) {
     console.error("Error fetching leaderboard:", err);
