@@ -14,31 +14,104 @@ const activeWordRooms = new Map();
 const pendingWordMatches = new Map();
 
 /**
- * Curated Pool of Anime & Gaming Secret Words (4 - 8 letters)
+ * Curated Pool of Anime & Gaming Secret Words with Hints (4 - 8 letters)
  */
 export const ANIME_GAME_WORDS = [
   // 4 letters
-  "GOKU", "ZORO", "NAMI", "LUKE", "DOOM", "HALO", "APEX", "SOUL", "MAGE", "LEVI",
-  "SORA", "NEON", "CHAD", "REMU", "RYUK", "JINX", "LINK", "EDEN", "MECH", "FIRE",
-  "CLAN", "HERO", "MARS", "NOVA", "SEGA", "SONY", "BOSS", "LOOT", "MANA", "ZODD",
+  { word: "GOKU", hint: "A Saiyan warrior who transforms into a Super Saiyan to protect Earth" },
+  { word: "ZORO", hint: "The swordsman of the Straw Hat crew who wields three blades at once" },
+  { word: "NAMI", hint: "The navigator of the Straw Hats who can control weather with her staff" },
+  { word: "LUKE", hint: "A Jedi who learned the ways of the Force and battled the Empire" },
+  { word: "DOOM", hint: "A relentless space marine battling demons from hell on Mars" },
+  { word: "HALO", hint: "A ring-shaped superweapon and the arena where a Master Chief fights" },
+  { word: "APEX", hint: "A battle royale where Legends with unique abilities fight for glory" },
+  { word: "SOUL", hint: "The spiritual essence that shinigami harvest in the afterlife" },
+  { word: "MAGE", hint: "A magic-wielding class that casts spells from a distance in RPGs" },
+  { word: "LEVI", hint: "Humanity's strongest soldier in the Scout Regiment with lightning speed" },
+  { word: "SORA", hint: "A keyblade-wielding hero who travels between Disney and Final Fantasy worlds" },
+  { word: "NEON", hint: "Glowing electrified light tubes that define the cyberpunk aesthetic" },
+  { word: "RYUK", hint: "A Shinigami who dropped a deadly notebook into the human world" },
+  { word: "JINX", hint: "An unhinged inventor with blue hair who loves chaos and explosions" },
+  { word: "LINK", hint: "A young hero in a green tunic who wields the Triforce of Courage" },
+  { word: "MECH", hint: "A giant mechanical suit piloted by a human in anime battles" },
+  { word: "FIRE", hint: "The elemental attack that Natsu, Ace, and countless anime heroes breathe" },
+  { word: "HERO", hint: "One for All quirk wielder who says 'Go beyond! Plus Ultra!'" },
+  { word: "NOVA", hint: "A stellar explosion of energy — also a Guardians of the Galaxy Corps" },
+  { word: "BOSS", hint: "The final powerful enemy at the end of a dungeon or game chapter" },
+  { word: "MANA", hint: "The magical energy resource used to cast spells in most RPGs" },
+  { word: "ZODD", hint: "An immortal apostle who fought for a thousand years in Berserk" },
   // 5 letters
-  "TITAN", "ZELDA", "LUFFY", "ANIME", "MANGA", "CHIBI", "MECHA", "OTAKU", "NINJA",
-  "KANJI", "SUSHI", "TOKYO", "BLADE", "SWORD", "MAGIC", "POWER", "SPEED", "ARMOR",
-  "DEMON", "GHOST", "BEAST", "PIXEL", "VALOR", "QUEST", "RELIC", "ROGUE", "DEATH",
-  "CYBER", "FINAL", "FORCE", "SUPER", "GUILD", "SONIC", "CLOUD", "SEPHI", "SAIYA",
+  { word: "TITAN", hint: "A massive humanoid creature in Attack on Titan that devours humans" },
+  { word: "ZELDA", hint: "A princess who holds the Triforce of Wisdom and often needs rescuing" },
+  { word: "LUFFY", hint: "A rubber-bodied pirate captain who aims to become King of the Pirates" },
+  { word: "ANIME", hint: "Japanese animation style known for vibrant art and dramatic storylines" },
+  { word: "MANGA", hint: "Japanese comic books read right-to-left with black and white artwork" },
+  { word: "CHIBI", hint: "A cute art style featuring characters with oversized heads and tiny bodies" },
+  { word: "MECHA", hint: "Giant piloted robots that are a staple of sci-fi anime like Evangelion" },
+  { word: "OTAKU", hint: "A person with obsessive interest in anime, manga, and Japanese pop culture" },
+  { word: "NINJA", hint: "A covert agent trained in stealth, martial arts, and assassination in feudal Japan" },
+  { word: "TOKYO", hint: "Japan's capital city and the setting for countless anime series" },
+  { word: "BLADE", hint: "A sharp edged weapon, also a half-vampire Marvel hero who hunts the undead" },
+  { word: "SWORD", hint: "The primary weapon of choice for heroes like Kirito in Sword Art Online" },
+  { word: "DEMON", hint: "A supernatural evil being that slayers like Tanjiro hunt relentlessly" },
+  { word: "GHOST", hint: "An undead spirit — also a legendary Halo Spartan who haunts his foes" },
+  { word: "BEAST", hint: "A monstrous transformed state that many shonen protagonists achieve" },
+  { word: "PIXEL", hint: "The smallest unit in a digital image — the building block of retro games" },
+  { word: "ROGUE", hint: "A stealthy thief class that uses daggers and backstabs in RPGs" },
+  { word: "CYBER", hint: "A prefix for futuristic technology-merged worlds like Cyberpunk 2077" },
+  { word: "CLOUD", hint: "A spiky-haired mercenary who wields an oversized sword in Midgar" },
+  { word: "SONIC", hint: "The fastest hedgehog alive who collects golden rings and battles Eggman" },
   // 6 letters
-  "BANKAI", "NARUTO", "SASUKE", "ITACHI", "SHADOW", "CHAKRA", "HUNTER", "ESPADA",
-  "HOLLOW", "DOMAIN", "BLEACH", "SPIRIT", "DRAGON", "AVATAR", "WIZARD", "KNIGHT",
-  "GHOULS", "KAIJUS", "SHIELD", "LEGEND", "ATTACK", "VALLEY", "SHONEN", "MAKIMA",
-  "DENJIS", "SUKUNA", "MADARA", "KAKASH",
+  { word: "BANKAI", hint: "The final and most powerful release form of a Shinigami's zanpakuto in Bleach" },
+  { word: "NARUTO", hint: "A ninja with a nine-tailed fox sealed inside him who dreams of becoming Hokage" },
+  { word: "SASUKE", hint: "Naruto's rival who seeks revenge against his brother for massacring his clan" },
+  { word: "ITACHI", hint: "A prodigious Uchiha who wiped out his clan to protect his village from war" },
+  { word: "SHADOW", hint: "The ultimate lifeform created from Gerald Robotnik's research, rivals Sonic" },
+  { word: "CHAKRA", hint: "The life energy in Naruto that ninja mold to perform jutsu techniques" },
+  { word: "HUNTER", hint: "A professional who accepts contracts to pursue powerful and dangerous prey" },
+  { word: "HOLLOW", hint: "A corrupted spirit in Bleach that devours human souls and threatens the living" },
+  { word: "BLEACH", hint: "A shounen anime about a substitute Soul Reaper who fights Hollows in Karakura" },
+  { word: "DRAGON", hint: "A mythical fire-breathing creature with scales and wings — slayer awaits" },
+  { word: "AVATAR", hint: "One who can master all four elements — Water, Earth, Fire, and Air" },
+  { word: "WIZARD", hint: "A master of arcane magic who studies spells and wears robes with a staff" },
+  { word: "KNIGHT", hint: "An armored warrior bound by honor who serves a kingdom or a holy cause" },
+  { word: "SHIELD", hint: "A defensive weapon — also Captain America's vibranium disc" },
+  { word: "LEGEND", hint: "A hero of mythic status whose tales are passed down through generations" },
+  { word: "SUKUNA", hint: "The King of Curses with multiple faces and arms inside Yuji Itadori" },
+  { word: "MADARA", hint: "The legendary Uchiha who could cast the Infinite Tsukuyomi over the world" },
+  { word: "MAKIMA", hint: "A mysterious Control Devil working as a government hunter of Chainsaw Man" },
   // 7 letters
-  "SAITAMA", "SHINOBI", "PERSONA", "WITCHER", "GENSHIN", "SLAYERS", "MONSTER",
-  "PHOENIX", "WARLOCK", "CYBERPU", "TITANIC", "HOLLOWS", "ARCHERS", "PALADIN",
-  "ALBEDOS", "MINATOS", "JUTSUUS", "POKEMON",
+  { word: "SAITAMA", hint: "A hero who trained so hard he lost all his hair and can defeat anyone in one punch" },
+  { word: "SHINOBI", hint: "The Japanese word for ninja — a covert warrior of feudal Japan" },
+  { word: "PERSONA", hint: "A manifestation of the inner self summoned by JRPG characters using their ego" },
+  { word: "WITCHER", hint: "A monster hunter mutated by trials and trained in swordsmanship and signs" },
+  { word: "GENSHIN", hint: "An open-world gacha RPG set in Teyvat where you seek your lost sibling" },
+  { word: "MONSTER", hint: "A powerful creature that hunters track and slay in the world of Capcom" },
+  { word: "PHOENIX", hint: "A mythical fire bird that is reborn from its own ashes upon death" },
+  { word: "WARLOCK", hint: "A dark magic user who made a pact with a powerful otherworldly patron" },
+  { word: "POKEMON", hint: "Pocket monsters collected and battled by trainers aiming to catch them all" },
+  { word: "PALADIN", hint: "A holy warrior combining divine magic and martial prowess to fight evil" },
   // 8 letters
-  "BERSERK", "OVERLORD", "SHINIGAM", "ALCHEMIS", "PLATINUM", "ASSASSIN",
-  "WARRIORS", "INFINITY", "TSUKUYOM", "VALKYRIE"
+  { word: "BERSERK", hint: "A dark fantasy manga following Guts, a warrior wielding a massive sword" },
+  { word: "OVERLORD", hint: "A skeleton MMORPG player who gets trapped in a game as the most powerful being" },
+  { word: "PLATINUM", hint: "A precious silver-white metal — also a developer of stylish action games" },
+  { word: "ASSASSIN", hint: "A covert killer trained in stealth and silent elimination of targets" },
+  { word: "WARRIORS", hint: "Legendary fighters who battle entire armies alone in hack-and-slash games" },
+  { word: "INFINITY", hint: "Thanos's goal — collecting all six stones to wipe out half of all life" },
+  { word: "VALKYRIE", hint: "Norse warrior maidens who chose which slain soldiers ascended to Valhalla" },
 ];
+
+/**
+ * Fisher-Yates shuffle — returns a new shuffled copy of the array
+ */
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 /**
  * Letter Evaluation Algorithm
@@ -314,6 +387,10 @@ export function initWordDuelSocketHandlers(io, socket) {
 
     room.secretWord = cleanWord;
 
+    // Look up the hint for this word from the pool
+    const wordEntry = ANIME_GAME_WORDS.find((w) => w.word === cleanWord);
+    room.secretHint = wordEntry?.hint || null;
+
     const setter = room.player1.userId === room.setterUserId ? room.player1 : room.player2;
     const guesser = room.player1.userId === room.guesserUserId ? room.player1 : room.player2;
 
@@ -335,6 +412,61 @@ export function initWordDuelSocketHandlers(io, socket) {
 
     // Both players proceed to guessing phase
     checkAndStartGuessingPhase(io, roomId);
+  });
+
+  // ─── 6b. GUESSER USES HINT (costs 3 chances — maxChances drops to 5) ───
+  socket.on("word_use_hint", ({ roomId }) => {
+    const room = activeWordRooms.get(roomId);
+    if (!room || room.status !== "guessing") {
+      return socket.emit("word_error", { message: "Cannot use hint at this time." });
+    }
+
+    if (socket.userId !== room.guesserUserId) {
+      return socket.emit("word_error", { message: "Only the Cipher Breaker can use a hint." });
+    }
+
+    if (room.hintUsed) {
+      return socket.emit("word_error", { message: "Hint already used." });
+    }
+
+    if (!room.secretHint) {
+      return socket.emit("word_error", { message: "No hint available for this word." });
+    }
+
+    room.hintUsed = true;
+
+    // Reduce max chances to 5 (only if guesser hasn't already used more)
+    const guesser = room.player1.userId === room.guesserUserId ? room.player1 : room.player2;
+    if (guesser.maxChances > 5) {
+      guesser.maxChances = 5;
+    }
+    const newChancesLeft = Math.max(0, guesser.maxChances - guesser.chancesUsed);
+
+    // Send hint to guesser only
+    if (guesser.socketId) {
+      io.to(guesser.socketId).emit("word_hint_revealed", {
+        roomId,
+        hintText: room.secretHint,
+        newMaxChances: guesser.maxChances,
+        chancesLeft: newChancesLeft,
+      });
+    }
+
+    // Notify setter that hint was used
+    const setter = room.player1.userId === room.setterUserId ? room.player1 : room.player2;
+    if (setter.socketId) {
+      io.to(setter.socketId).emit("word_hint_used_by_guesser", {
+        roomId,
+        guesserUsername: guesser.username,
+        newMaxChances: guesser.maxChances,
+        chancesLeft: newChancesLeft,
+      });
+    }
+
+    // Check if hint reduced chances to 0 or below used amount (game over edge case)
+    if (newChancesLeft <= 0 && !guesser.isSolved) {
+      resolveWordGame(io, roomId, guesser, setter, false);
+    }
   });
 
   // ─── 7. LIVE TYPING TELEMETRY STREAM (Guesser ➔ Setter) ───
@@ -367,7 +499,7 @@ export function initWordDuelSocketHandlers(io, socket) {
     }
 
     const guesser = room.player1.userId === room.guesserUserId ? room.player1 : room.player2;
-    if (guesser.chancesUsed >= 8 || guesser.isSolved) {
+    if (guesser.chancesUsed >= guesser.maxChances || guesser.isSolved) {
       return socket.emit("word_error", { message: "No chances remaining or cipher already cracked." });
     }
 
@@ -659,6 +791,11 @@ function startWordGameDirectly(io, roomId, player1, player2) {
       if (!live) return;
 
       live.status = "setting_secret";
+      live.hintUsed = false;
+      live.secretHint = null;
+
+      // Pick 10 random word+hint cards for setter to choose from
+      const wordCards = shuffleArray(ANIME_GAME_WORDS).slice(0, 10);
 
       const baseSecretData = {
         roomId,
@@ -666,7 +803,7 @@ function startWordGameDirectly(io, roomId, player1, player2) {
         setterUsername: live.setter.username,
         guesserUserId: live.guesserUserId,
         guesserUsername: live.guesser.username,
-        suggestedWords: ANIME_GAME_WORDS.slice(0, 12),
+        suggestedWords: wordCards,
         timeLimitSeconds: 30,
       };
 
@@ -687,17 +824,17 @@ function startWordGameDirectly(io, roomId, player1, player2) {
       // If the setter is a bot, pick secret word after 1.5s
       if (live.setter.isBot) {
         live.botSetTimer = setTimeout(() => {
-          const pool = ANIME_GAME_WORDS;
-          const chosen = pool[Math.floor(Math.random() * pool.length)];
-          live.secretWord = chosen;
+          const chosenEntry = ANIME_GAME_WORDS[Math.floor(Math.random() * ANIME_GAME_WORDS.length)];
+          live.secretWord = chosenEntry.word;
+          live.secretHint = chosenEntry.hint;
 
-          console.log(`[Word Bot Setter] ${live.setter.username} sealed secret word: ${chosen}`);
+          console.log(`[Word Bot Setter] ${live.setter.username} sealed secret word: ${chosenEntry.word}`);
 
           if (live.guesser.socketId) {
             io.to(live.guesser.socketId).emit("word_secret_ready", {
               roomId,
               setterUsername: live.setter.username,
-              wordLength: chosen.length,
+              wordLength: chosenEntry.word.length,
             });
           }
 
@@ -726,7 +863,8 @@ function checkAndStartGuessingPhase(io, roomId) {
     guesserUserId: room.guesserUserId,
     guesserUsername: guesser.username,
     wordLength: room.secretWord.length,
-    maxChances: 8,
+    maxChances: guesser.maxChances,
+    hintAvailable: !!room.secretHint,
   };
 
   if (setter.socketId) {
@@ -762,7 +900,7 @@ function executeWordGuess(io, room, guessWord) {
 
   const feedback = evaluateWordGuess(cleanGuess, secretWord);
   guesser.chancesUsed += 1;
-  const chancesLeft = 8 - guesser.chancesUsed;
+  const chancesLeft = guesser.maxChances - guesser.chancesUsed;
   const isCorrect = feedback.every((c) => c === "green");
 
   if (isCorrect) {
@@ -811,7 +949,9 @@ function startBotGuesserLoop(io, roomId) {
   if (!room || room.status !== "guessing") return;
 
   const targetLen = room.secretWord.length;
-  const candidates = ANIME_GAME_WORDS.filter((w) => w.length === targetLen);
+  const candidates = ANIME_GAME_WORDS
+    .map((e) => e.word)
+    .filter((w) => w.length === targetLen);
   if (!candidates.length) candidates.push(room.secretWord);
 
   const botGuess = () => {
@@ -820,7 +960,7 @@ function startBotGuesserLoop(io, roomId) {
 
     const guesser =
       currentRoom.player1.userId === currentRoom.guesserUserId ? currentRoom.player1 : currentRoom.player2;
-    if (guesser.chancesUsed >= 8 || guesser.isSolved) return;
+    if (guesser.chancesUsed >= guesser.maxChances || guesser.isSolved) return;
 
     // Pick a word
     let chosenWord;
@@ -849,7 +989,7 @@ function startBotGuesserLoop(io, roomId) {
           executeWordGuess(io, currentRoom, chosenWord);
 
           // If still in guessing phase, schedule next bot guess
-          if (currentRoom.status === "guessing" && guesser.chancesUsed < 8 && !guesser.isSolved) {
+          if (currentRoom.status === "guessing" && guesser.chancesUsed < guesser.maxChances && !guesser.isSolved) {
             currentRoom.botGuessTimer = setTimeout(botGuess, 2600);
           }
         }, 500);
