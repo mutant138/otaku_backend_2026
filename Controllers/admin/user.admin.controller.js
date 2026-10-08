@@ -29,8 +29,16 @@ export const getAllUsers = async (req, res) => {
     if (role) filter.role = role;
     if (isVerified !== undefined && isVerified !== "") filter.isVerified = isVerified === "true";
     if (isPremium !== undefined && isPremium !== "") filter.isPremium = isPremium === "true";
-    if (isBot !== undefined && isBot !== "") filter.isBot = isBot === "true";
     if (isOnboarded !== undefined && isOnboarded !== "") filter.isOnboarded = isOnboarded === "true";
+
+    if (isBot === "true") {
+      filter.isBot = true;
+    } else if (isBot === "all") {
+      // Don't filter by isBot (includes both)
+    } else {
+      // Default: Only show genuine real human users
+      filter.isBot = { $ne: true };
+    }
 
     const [users, total] = await Promise.all([
       dbCommonQuery({

@@ -23,8 +23,8 @@ export const getDashboardStats = async (req, res) => {
       totalQuizQuestions,
       totalDuels,
     ] = await Promise.all([
-      dbCommonQuery({ model: "User", action: "countDocuments", filter: {} }),
-      dbCommonQuery({ model: "User", action: "countDocuments", filter: { isPremium: true } }),
+      dbCommonQuery({ model: "User", action: "countDocuments", filter: { isBot: { $ne: true } } }),
+      dbCommonQuery({ model: "User", action: "countDocuments", filter: { isPremium: true, isBot: { $ne: true } } }),
       dbCommonQuery({ model: "User", action: "countDocuments", filter: { isBot: true } }),
       dbCommonQuery({ model: "AnimeTitle", action: "countDocuments", filter: {} }),
       dbCommonQuery({ model: "GameTitle", action: "countDocuments", filter: {} }),
@@ -46,11 +46,11 @@ export const getDashboardStats = async (req, res) => {
     ]);
     const totalRevenueInr = revenueResult.length > 0 ? Math.round(revenueResult[0].totalPaise / 100) : 0;
 
-    // Recent 5 users
+    // Recent 5 real users
     const recentUsers = await dbCommonQuery({
       model: "User",
       action: "find",
-      filter: {},
+      filter: { isBot: { $ne: true } },
       projection: "fullname username email avatar isVerified isPremium role createdAt",
       sort: { createdAt: -1 },
       limit: 5,

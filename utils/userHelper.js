@@ -95,6 +95,7 @@ export function buildUserResponse(user) {
     superLikesBalance: user.superLikesBalance !== undefined ? user.superLikesBalance : 1,
     profileCompletedRewardClaimed: user.profileCompletedRewardClaimed || false,
     loginStreak: user.loginStreak || { current: 1, lastLoginDate: new Date(), best: 1 },
+    isBot: Boolean(user.isBot),
     isPremium,
     activeSubscription: user.activeSubscription || null,
     role: user.role || "user",
@@ -142,7 +143,8 @@ export function buildPublicUserResponse(user) {
     discord: user.discord || "",
     instagram: user.instagram || "",
     synergy: user.synergy || 0,
-    isPremium
+    isBot: Boolean(user.isBot),
+    isPremium,
   };
 }
 
