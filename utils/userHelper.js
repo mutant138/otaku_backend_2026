@@ -5,13 +5,15 @@ export const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toS
 export const ANIME_PREFIXES = [
   "Shinobi", "Saiyan", "Ghoul", "Titan", "Jujutsu", "Hokage", "Bankai", "Tsundere", "Yandere", "Senpai",
   "Kouhai", "Otaku", "Weeb", "Chibi", "Neko", "Kawaii", "Shounen", "Shojo", "Isekai", "Nakama",
-  "Jutsu", "Sharingan", "Rasengan", "Kamehameha", "DeathNote", "Geass", "StrawHat", "Goku", "Naruto", "Luffy"
+  "Jutsu", "Sharingan", "Rasengan", "Kamehameha", "DeathNote", "Geass", "StrawHat", "Goku", "Naruto", "Luffy",
+  "Gojo", "Sukuna", "Zoro", "Levi", "Tanjiro", "Nezuko", "Eren", "ShadowMonarch", "Chainsaw", "Alchemist"
 ];
 
 export const GAME_SUFFIXES = [
   "Gamer", "Pixel", "Glitch", "Mage", "Rogue", "Paladin", "Warrior", "Healer", "Sniper", "Camper",
   "Noob", "Pro", "Speedrunner", "Controller", "Joystick", "Quest", "Boss", "NPC", "Frag", "Guild",
-  "Loot", "Spawn", "Respawn", "Mana", "Stealth", "Modder", "Arcade", "Console", "Steam", "Xbox"
+  "Loot", "Spawn", "Respawn", "Mana", "Stealth", "Modder", "Arcade", "Console", "Steam", "Xbox",
+  "Radiant", "Tarnished", "Valkyrie", "Cyber", "Witcher", "Dungeon", "Carry", "Clutch", "Mythic", "Archon"
 ];
 
 export const generateRandomUsername = async () => {
