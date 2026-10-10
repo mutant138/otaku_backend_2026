@@ -1,6 +1,7 @@
 import { User, QuizQuestion, AnimeTitle, GameTitle, DuelHistory } from "../Models/index.js";
 import { generateUserId } from "../utils/jwt.js";
 import mongoose from "mongoose";
+import { getGameSetting } from "../services/gameSetting.service.js";
 
 // In-memory active matchmaking queue
 // { socketId, userId, gender, user, joinedAt, botFallbackTimer }
@@ -236,6 +237,13 @@ export function initDuelSocketHandlers(io, socket) {
 
       if (!userDoc) {
         return socket.emit("duel_error", { message: "User profile not found." });
+      }
+
+      const gameSetting = await getGameSetting("trivia_duel");
+      if (gameSetting && !gameSetting.isPublic) {
+        return socket.emit("duel_error", {
+          message: "Live Anime & Game Showdown is currently unavailable (maintenance mode).",
+        });
       }
 
       // Check Otaku Pass subscription status (unlimited games)
@@ -1002,30 +1010,45 @@ async function finishGame(io, roomId) {
     isDraw = true;
   }
 
-  // Award Quantum Synergy Points
+  // Award Quantum Synergy Points (Configurable via Admin Game Controls)
   let p1SynergyEarned = 0;
   let p2SynergyEarned = 0;
 
   try {
+    const gameSetting = await getGameSetting("trivia_duel");
+    const WIN_REWARD = Math.max(0, Number(gameSetting?.winReward ?? 50));
+    const LOSS_PENALTY = Math.max(0, Number(gameSetting?.defeatPenalty ?? 0));
+    const DRAW_REWARD = Math.max(0, Number(gameSetting?.drawReward ?? 5));
+
     if (!isDraw) {
       if (winnerId === room.player1.userId) {
-        p1SynergyEarned = 10;
-        p2SynergyEarned = 0;
+        p1SynergyEarned = WIN_REWARD;
+        p2SynergyEarned = LOSS_PENALTY > 0 ? -LOSS_PENALTY : 0;
         if (!room.player1.isBot) {
-          await User.findByIdAndUpdate(room.player1.userId, { $inc: { synergy: 10 } });
+          await User.findByIdAndUpdate(room.player1.userId, { $inc: { synergy: WIN_REWARD } });
+        }
+        if (!room.player2.isBot && LOSS_PENALTY > 0) {
+          await User.findByIdAndUpdate(room.player2.userId, [
+            { $set: { synergy: { $max: [0, { $subtract: ["$synergy", LOSS_PENALTY] }] } } },
+          ]);
         }
       } else {
-        p1SynergyEarned = 0;
-        p2SynergyEarned = 10;
+        p1SynergyEarned = LOSS_PENALTY > 0 ? -LOSS_PENALTY : 0;
+        p2SynergyEarned = WIN_REWARD;
         if (!room.player2.isBot) {
-          await User.findByIdAndUpdate(room.player2.userId, { $inc: { synergy: 10 } });
+          await User.findByIdAndUpdate(room.player2.userId, { $inc: { synergy: WIN_REWARD } });
+        }
+        if (!room.player1.isBot && LOSS_PENALTY > 0) {
+          await User.findByIdAndUpdate(room.player1.userId, [
+            { $set: { synergy: { $max: [0, { $subtract: ["$synergy", LOSS_PENALTY] }] } } },
+          ]);
         }
       }
     } else {
-      p1SynergyEarned = 5;
-      p2SynergyEarned = 5;
-      if (!room.player1.isBot) await User.findByIdAndUpdate(room.player1.userId, { $inc: { synergy: 5 } });
-      if (!room.player2.isBot) await User.findByIdAndUpdate(room.player2.userId, { $inc: { synergy: 5 } });
+      p1SynergyEarned = DRAW_REWARD;
+      p2SynergyEarned = DRAW_REWARD;
+      if (!room.player1.isBot && DRAW_REWARD > 0) await User.findByIdAndUpdate(room.player1.userId, { $inc: { synergy: DRAW_REWARD } });
+      if (!room.player2.isBot && DRAW_REWARD > 0) await User.findByIdAndUpdate(room.player2.userId, { $inc: { synergy: DRAW_REWARD } });
     }
 
     // Persist Match in DuelHistory

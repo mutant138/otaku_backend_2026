@@ -1,5 +1,6 @@
 import { User } from "../Models/index.js";
 import { BOT_PERSONAS, getOrCreateBotUser } from "./duelManager.js";
+import { getGameSetting } from "../services/gameSetting.service.js";
 
 // In-memory active matchmaking queue for Word Cipher Duel
 // { socketId, userId, gender, user, joinedAt, botFallbackTimer }
@@ -191,6 +192,13 @@ export function initWordDuelSocketHandlers(io, socket) {
 
       if (!userDoc) {
         return socket.emit("word_error", { message: "User profile not found." });
+      }
+
+      const gameSetting = await getGameSetting("word_cipher");
+      if (gameSetting && !gameSetting.isPublic) {
+        return socket.emit("word_error", {
+          message: "Secret Word Cipher Duel is currently unavailable (maintenance mode).",
+        });
       }
 
       console.log(`[Word Duel Queue] User ${userDoc.username} (${userId}) joined queue.`);
@@ -1001,7 +1009,9 @@ function startBotGuesserLoop(io, roomId) {
 }
 
 /**
- * Resolve game, award synergy, notify players
+ * Resolve game, award/deduct synergy, notify players
+ * Win:  Winner +30 synergy | Loser -5 synergy (min 0)
+ * Loss: Loser -5 synergy (min 0)
  */
 async function resolveWordGame(io, roomId, guesser, setter, isWin) {
   const room = activeWordRooms.get(roomId);
@@ -1012,51 +1022,59 @@ async function resolveWordGame(io, roomId, guesser, setter, isWin) {
   if (room.botGuessTimer) clearTimeout(room.botGuessTimer);
   if (room.botSetTimer) clearTimeout(room.botSetTimer);
 
+  const gameSetting = await getGameSetting("word_cipher");
+  const WIN_REWARD = Math.max(0, Number(gameSetting?.winReward ?? 30));
+  const LOSS_PENALTY = Math.max(0, Number(gameSetting?.defeatPenalty ?? 5));
+
   let newGuesserSynergy = undefined;
   let newSetterSynergy = undefined;
 
   if (isWin) {
-    // Guesser cracked the cipher!
+    // Guesser cracked the cipher → Guesser wins (+30), Setter loses (-5)
     try {
       if (!guesser.isBot) {
         const u = await User.findByIdAndUpdate(
           guesser.userId,
-          { $inc: { synergy: 25 } },
+          { $inc: { synergy: WIN_REWARD } },
           { new: true }
         ).select("synergy");
         newGuesserSynergy = u?.synergy;
-        console.log(`[Word Duel] Guesser ${guesser.username} cracked cipher! Synergy: ${newGuesserSynergy}`);
+        console.log(`[Word Duel] Guesser ${guesser.username} cracked cipher! +${WIN_REWARD} Synergy → ${newGuesserSynergy}`);
       }
       if (!setter.isBot) {
+        // Deduct but clamp to 0
         const s = await User.findByIdAndUpdate(
           setter.userId,
-          { $inc: { synergy: 5 } },
+          [{ $set: { synergy: { $max: [0, { $subtract: ["$synergy", LOSS_PENALTY] }] } } }],
           { new: true }
         ).select("synergy");
         newSetterSynergy = s?.synergy;
+        console.log(`[Word Duel] Setter ${setter.username} cipher broken. -${LOSS_PENALTY} Synergy → ${newSetterSynergy}`);
       }
     } catch (e) {
       console.error("[Word Duel Synergy Error]:", e);
     }
   } else {
-    // Setter's cipher was unbroken! Setter wins!
+    // Guesser ran out of chances → Setter wins (+30), Guesser loses (-5)
     try {
       if (!setter.isBot) {
         const s = await User.findByIdAndUpdate(
           setter.userId,
-          { $inc: { synergy: 25 } },
+          { $inc: { synergy: WIN_REWARD } },
           { new: true }
         ).select("synergy");
         newSetterSynergy = s?.synergy;
-        console.log(`[Word Duel] Setter ${setter.username} cipher was unbroken! Synergy: ${newSetterSynergy}`);
+        console.log(`[Word Duel] Setter ${setter.username} cipher was unbroken! +${WIN_REWARD} Synergy → ${newSetterSynergy}`);
       }
       if (!guesser.isBot) {
+        // Deduct but clamp to 0
         const g = await User.findByIdAndUpdate(
           guesser.userId,
-          { $inc: { synergy: 5 } },
+          [{ $set: { synergy: { $max: [0, { $subtract: ["$synergy", LOSS_PENALTY] }] } } }],
           { new: true }
         ).select("synergy");
         newGuesserSynergy = g?.synergy;
+        console.log(`[Word Duel] Guesser ${guesser.username} failed to crack cipher. -${LOSS_PENALTY} Synergy → ${newGuesserSynergy}`);
       }
     } catch (e) {
       console.error("[Word Duel Synergy Error]:", e);
@@ -1078,7 +1096,7 @@ async function resolveWordGame(io, roomId, guesser, setter, isWin) {
       chancesUsed: guesser.chancesUsed,
       won: isWin,
       newSynergy: newGuesserSynergy,
-      synergyEarned: isWin ? 25 : 5,
+      synergyChange: isWin ? WIN_REWARD : -LOSS_PENALTY,
     },
     setter: {
       userId: setter.userId,
@@ -1086,7 +1104,7 @@ async function resolveWordGame(io, roomId, guesser, setter, isWin) {
       avatar: setter.avatar,
       won: !isWin,
       newSynergy: newSetterSynergy,
-      synergyEarned: !isWin ? 25 : 5,
+      synergyChange: !isWin ? WIN_REWARD : -LOSS_PENALTY,
     },
   });
 }

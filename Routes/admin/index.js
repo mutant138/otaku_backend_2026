@@ -14,6 +14,7 @@ import feedbackRoutes from "./feedback.admin.routes.js";
 import loginHistoryRoutes from "./loginHistory.admin.routes.js";
 import quizQuestionRoutes from "./quizQuestion.admin.routes.js";
 import duelRoutes from "./duel.admin.routes.js";
+import gameSettingRoutes from "./gameSetting.admin.routes.js";
 
 const router = express.Router();
 
@@ -32,5 +33,6 @@ router.use("/feedbacks", feedbackRoutes);
 router.use("/login-history", loginHistoryRoutes);
 router.use("/quiz-questions", quizQuestionRoutes);
 router.use("/duels", duelRoutes);
+router.use("/games", gameSettingRoutes);
 
 export default router;

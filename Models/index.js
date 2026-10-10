@@ -17,6 +17,7 @@ import Feedback from "./feedback.schema.js";
 import LoginHistory from "./loginHistory.schema.js";
 import QuizQuestion from "./quizQuestion.schema.js";
 import DuelHistory from "./duelHistory.schema.js";
+import GameSetting from "./gameSetting.schema.js";
 
 const modelsMap = {
   User,
@@ -38,6 +39,7 @@ const modelsMap = {
   LoginHistory,
   QuizQuestion,
   DuelHistory,
+  GameSetting,
 };
 
 export {
@@ -60,6 +62,7 @@ export {
   LoginHistory,
   QuizQuestion,
   DuelHistory,
+  GameSetting,
   modelsMap,
 };
 

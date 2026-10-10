@@ -169,3 +169,20 @@ export async function getDuelLeaderboard(req, res) {
   }
 }
 
+/**
+ * Get arena game settings (public for player client)
+ */
+export async function getPublicGameSettings(req, res) {
+  try {
+    const { getOrSeedAllGameSettings } = await import("../services/gameSetting.service.js");
+    const settings = await getOrSeedAllGameSettings();
+    return res.status(200).json({
+      status: true,
+      data: settings,
+    });
+  } catch (err) {
+    console.error("Error fetching arena game settings:", err);
+    return res.status(500).json({ status: false, message: "Failed to fetch game settings." });
+  }
+}
+
