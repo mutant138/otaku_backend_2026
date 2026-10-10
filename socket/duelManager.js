@@ -1060,6 +1060,7 @@ async function finishGame(io, roomId) {
       player1Score: room.player1.score,
       player2Score: room.player2.score,
       totalRounds: room.totalRounds,
+      categoryBreakdown : ["Trivia_Duel"]
     });
   } catch (dbErr) {
     console.error("[DuelManager] Error updating synergy or saving history:", dbErr);

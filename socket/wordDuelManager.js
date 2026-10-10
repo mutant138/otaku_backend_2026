@@ -1,4 +1,4 @@
-import { User } from "../Models/index.js";
+import { DuelHistory, User } from "../Models/index.js";
 import { BOT_PERSONAS, getOrCreateBotUser } from "./duelManager.js";
 import { getGameSetting } from "../services/gameSetting.service.js";
 
@@ -1079,6 +1079,25 @@ async function resolveWordGame(io, roomId, guesser, setter, isWin) {
     } catch (e) {
       console.error("[Word Duel Synergy Error]:", e);
     }
+  }
+
+  const winnerId = isWin ? guesser.userId : setter.userId;
+  const isP1Winner = room.player1.userId === winnerId;
+
+  // Persist Match in DuelHistory so daily duel count updates and stats are tracked
+  try {
+    await DuelHistory.create({
+      player1: room.player1.userId,
+      player2: room.player2.userId,
+      winner: winnerId,
+      isDraw: false,
+      player1Score: isP1Winner ? 100 : 0,
+      player2Score: !isP1Winner ? 100 : 0,
+      totalRounds: 1,
+      categoryBreakdown: ["Word_Cipher"],
+    });
+  } catch (dbErr) {
+    console.error("[Word DuelManager] Error saving duel history:", dbErr);
   }
 
   io.to(roomId).emit("word_game_over", {

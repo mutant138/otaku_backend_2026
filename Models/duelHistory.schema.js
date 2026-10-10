@@ -38,6 +38,7 @@ const duelHistorySchema = new mongoose.Schema(
     categoryBreakdown: {
       type: [String],
       default: [],
+      enum : ["Word_Cipher" , "Trivia_Duel"]
     },
   },
   {
