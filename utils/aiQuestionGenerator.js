@@ -3,10 +3,14 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const AI_API_BASE_URL =
-  process.env.AI_API_BASE_URL || "https://agentwealwin.wearedev.team";
-const PRIMARY_MODEL = "qwen2.5:3b";
-const FALLBACK_MODELS = ["test-bot:latest", "qwen2.5:0.5b", "qwen3:4b", "qwen2.5:7b"];
+const AI_API_BASE_URL = (
+  process.env.OLLAMA_HOST ||
+  process.env.AI_API_BASE_URL ||
+  "http://127.0.0.1:11434"
+).replace(/\/+$/, "");
+
+const PRIMARY_MODEL = process.env.OLLAMA_MODEL || process.env.AI_MODEL || "gemma4:31b-cloud";
+const FALLBACK_MODELS = ["gemma4:31b-cloud", "qwen2.5:3b", "test-bot:latest", "qwen2.5:7b", "llama3.2:latest", "mistral:latest"];
 
 /**
  * Generate trivia questions for a specific Anime or Video Game title using company self-hosted Ollama AI.
