@@ -454,8 +454,8 @@ export function initDuelSocketHandlers(io, socket) {
       playerState.streak = (playerState.streak || 0) + 1;
       playerState.correctCount = (playerState.correctCount || 0) + 1;
 
-      const remainingTimeMs = Math.max(0, 10000 - (clientAnswerTimeMs || 5000));
-      const speedBonus = Math.floor((remainingTimeMs / 10000) * 50);
+      const remainingTimeMs = Math.max(0, 15000 - (clientAnswerTimeMs || 7500));
+      const speedBonus = Math.floor((remainingTimeMs / 15000) * 50);
       const streakBonus = Math.min((playerState.streak - 1) * 15, 60);
 
       roundPoints = 100 + speedBonus + streakBonus;
@@ -825,7 +825,7 @@ function startRound(io, roomId) {
     options: roundData.options,
     category: roundData.category || roundData.title || "Anime & Gaming",
     difficulty: roundData.difficulty || "medium",
-    timeLimitSeconds: 10,
+    timeLimitSeconds: 15,
     player1Score: room.player1.score,
     player2Score: room.player2.score,
     player1Streak: room.player1.streak,
@@ -859,8 +859,8 @@ function startRound(io, roomId) {
       p2.correctCount = (p2.correctCount || 0) + 1;
 
       // High speed bonus + combo streak bonus
-      const remainingTimeMs = Math.max(0, 10000 - botDelay);
-      const speedBonus = Math.floor((remainingTimeMs / 10000) * 50);
+      const remainingTimeMs = Math.max(0, 15000 - botDelay);
+      const speedBonus = Math.floor((remainingTimeMs / 15000) * 50);
       const streakBonus = Math.min((p2.streak - 1) * 15, 60);
       const roundPoints = 100 + speedBonus + streakBonus;
 
@@ -897,8 +897,8 @@ function startRound(io, roomId) {
       p1.streak = (p1.streak || 0) + 1;
       p1.correctCount = (p1.correctCount || 0) + 1;
 
-      const remainingTimeMs = Math.max(0, 10000 - botDelay);
-      const speedBonus = Math.floor((remainingTimeMs / 10000) * 50);
+      const remainingTimeMs = Math.max(0, 15000 - botDelay);
+      const speedBonus = Math.floor((remainingTimeMs / 15000) * 50);
       const streakBonus = Math.min((p1.streak - 1) * 15, 60);
       const roundPoints = 100 + speedBonus + streakBonus;
 
@@ -919,10 +919,10 @@ function startRound(io, roomId) {
     }, botDelay);
   }
 
-  // 10-second round timer
+  // 15-second round timer
   room.roundTimer = setTimeout(() => {
     resolveRound(io, roomId);
-  }, 10000);
+  }, 15000);
 }
 
 /**
