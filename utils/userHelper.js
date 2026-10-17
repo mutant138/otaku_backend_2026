@@ -149,6 +149,32 @@ export function buildPublicUserResponse(user) {
 }
 
 /**
+ * Minimal user shape for chat channel list responses.
+ * Only exposes what the chat UI actually needs — no sensitive or private details.
+ */
+export function buildChatUserResponse(user) {
+  if (!user) return null;
+
+  const isPremium =
+    user.isPremium &&
+    user.activeSubscription?.expiresAt &&
+    new Date(user.activeSubscription.expiresAt) > new Date();
+
+  return {
+    id: user._id,
+    username: user.username,
+    // First profile pic only — enough for avatar display in the chat list
+    avatar: user.profilePics?.[0] || user.avatar || null,
+    isVerified: user.isVerified || false,
+    isPremium: Boolean(isPremium),
+    isBot: Boolean(user.isBot),
+    // Only path is needed for the path badge in the channel list sidebar
+    preferences: {
+      path: user.preferences?.path || "both",
+    },
+  };
+}
+/**
  * Calculates and updates user's daily login streak and awards +3 bonus swipes every 7 days.
  * @param {Object} user - Mongoose user document
  * @returns {{ streakUpdated: boolean, bonusAwarded: number }}

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import dbCommonQuery from "../utils/dbCommonQuery.js";
-import { buildPublicUserResponse } from "../utils/userHelper.js";
+import { buildChatUserResponse } from "../utils/userHelper.js";
 
 /**
  * Fetch active chat channels/lobby conversations.
@@ -85,7 +85,7 @@ export const getLobbyChats = async (req, res) => {
       const isIncomingRequest = !isMutual && currentSentMessageCount === 0;
 
       channels.push({
-        user: buildPublicUserResponse(otherUser),
+        user: buildChatUserResponse(otherUser),
         latestMessage: latestMessage
           ? {
               id: latestMessage._id,
