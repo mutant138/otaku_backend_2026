@@ -84,6 +84,18 @@ export const initSocket = (server) => {
     });
 
 
+    // Read Receipts: fired when a user opens a chat thread
+    socket.on("mark_messages_read", ({ senderId }) => {
+      if (!senderId || !socket.userId) return;
+      // Notify the original sender that their messages were read
+      const senderRoom = `user:${senderId.toString()}`;
+      io.to(senderRoom).emit("messages_read_ack", {
+        readBy: socket.userId,
+        senderId,
+      });
+      console.log(`[Read Receipt] User ${socket.userId} read messages from ${senderId}`);
+    });
+
     socket.on("disconnect", () => {
       console.log(`Socket client disconnected: ${socket.id}`);
     });
@@ -118,5 +130,17 @@ export const sendRealtimeSwipeSync = (userId, data) => {
   console.log(`Emitted real-time card swipe sync to room ${userRoom}`);
   return true;
 };
+
+export const sendRealtimeReadReceipt = (senderId, readByUserId) => {
+  if (!io || !senderId) return false;
+  const senderRoom = `user:${senderId.toString()}`;
+  io.to(senderRoom).emit("messages_read_ack", {
+    readBy: readByUserId,
+    senderId,
+  });
+  console.log(`[Read Receipt Socket] Notified sender ${senderId} of read by ${readByUserId}`);
+  return true;
+};
+
 
 

@@ -183,6 +183,9 @@ export const getChatMessages = async (req, res) => {
       data: { $set: { isRead: true } },
     });
 
+    const { sendRealtimeReadReceipt } = await import("../socket/socket.js");
+    sendRealtimeReadReceipt(otherUserId, currentUserId);
+
     return res.status(200).json({ status: true, messages });
   } catch (error) {
     console.error("Get Chat Messages Error:", error);

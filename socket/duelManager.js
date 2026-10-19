@@ -15,6 +15,10 @@ const activeRooms = new Map();
 // roomId -> { player1, player2, questions, expiresAt, acceptanceTimer }
 const pendingMatches = new Map();
 
+// In-memory pending rematch proposals
+// requestId -> { requesterId, requesterSocketId, opponentId, timer }
+const pendingRematches = new Map();
+
 /**
  * Curated Pool of Realistic Anime & Gaming Challenger Personas
  * Male players are paired with attractive Female Personas
@@ -518,7 +522,125 @@ export function initDuelSocketHandlers(io, socket) {
       }
     }
   });
+
+  // ── 7. Rematch Request ────────────────────────────────────────────────────
+  // Sent by either player after GAME_OVER. The target receives a prompt.
+  socket.on("duel_rematch_request", ({ opponentId, fromUsername, fromAvatar }) => {
+    if (!opponentId || !userId) return;
+
+    const requestId = `rematch_${userId}_${opponentId}_${Date.now()}`;
+
+    // Store so the acceptor can look it up
+    pendingRematches.set(requestId, {
+      requesterId: userId.toString(),
+      requesterSocketId: socket.id,
+      opponentId: opponentId.toString(),
+      requestId,
+      expiresAt: Date.now() + 30000,
+      timer: setTimeout(() => {
+        pendingRematches.delete(requestId);
+        // Notify requester it expired
+        socket.emit("duel_rematch_expired", { requestId });
+      }, 30000),
+    });
+
+    // Deliver the invite to the opponent's room
+    const opponentRoom = `user:${opponentId.toString()}`;
+    io.to(opponentRoom).emit("duel_rematch_incoming", {
+      requestId,
+      fromUserId: userId.toString(),
+      fromUsername: fromUsername || "Opponent",
+      fromAvatar: fromAvatar || "",
+      expiresInSeconds: 30,
+    });
+
+    console.log(`[Rematch] ${userId} → ${opponentId} (requestId: ${requestId})`);
+  });
+
+  // Opponent accepted the rematch: build queue entries and skip matchmaking
+  socket.on("duel_rematch_accept", async ({ requestId }) => {
+    const rem = pendingRematches.get(requestId);
+    if (!rem) {
+      return socket.emit("duel_error", { message: "Rematch request expired or not found." });
+    }
+
+    clearTimeout(rem.timer);
+    pendingRematches.delete(requestId);
+
+    // Notify requester the rematch was accepted so their UI transitions
+    const requesterSocket = io.sockets.sockets.get(rem.requesterSocketId);
+    if (requesterSocket) {
+      requesterSocket.emit("duel_rematch_accepted", { requestId });
+    }
+
+    try {
+      // Load both players fresh from DB
+      const [p1Doc, p2Doc] = await Promise.all([
+        User.findById(rem.requesterId)
+          .select("username profilePics preferences gender")
+          .lean(),
+        User.findById(rem.opponentId)
+          .select("username profilePics preferences gender")
+          .lean(),
+      ]);
+
+      if (!p1Doc || !p2Doc) {
+        if (requesterSocket) requesterSocket.emit("duel_error", { message: "Player not found for rematch." });
+        socket.emit("duel_error", { message: "Player not found for rematch." });
+        return;
+      }
+
+      const makeQueueEntry = (doc, socketId) => ({
+        socketId,
+        userId: doc._id.toString(),
+        gender: doc.gender || "male",
+        user: {
+          _id: doc._id,
+          username: doc.username,
+          avatar: doc.profilePics?.[0] || "",
+          path: doc.preferences?.path || "both",
+          animeFavorites: (doc.preferences?.animeFavorites || []).map((f) =>
+            typeof f === "object" ? f.title : f
+          ),
+          gameFavorites: (doc.preferences?.gameFavorites || []).map((f) =>
+            typeof f === "object" ? f.title : f
+          ),
+          hasPass: false,
+        },
+        joinedAt: Date.now(),
+      });
+
+      const entry1 = makeQueueEntry(p1Doc, rem.requesterSocketId);
+      const entry2 = makeQueueEntry(p2Doc, socket.id);
+
+      // Bypass queue — go straight to match found prompt
+      createMatchFoundPrompt(io, entry1, entry2);
+      console.log(`[Rematch] Match created for ${p1Doc.username} ↔ ${p2Doc.username}`);
+    } catch (err) {
+      console.error("[Rematch Accept Error]:", err);
+      socket.emit("duel_error", { message: "Failed to start rematch. Please try again." });
+    }
+  });
+
+  // Opponent declined the rematch
+  socket.on("duel_rematch_decline", ({ requestId }) => {
+    const rem = pendingRematches.get(requestId);
+    if (!rem) return;
+
+    clearTimeout(rem.timer);
+    pendingRematches.delete(requestId);
+
+    const requesterSocket = io.sockets.sockets.get(rem.requesterSocketId);
+    if (requesterSocket) {
+      requesterSocket.emit("duel_rematch_declined", {
+        requestId,
+        message: "Opponent declined the rematch.",
+      });
+    }
+    console.log(`[Rematch] Declined — requestId: ${requestId}`);
+  });
 }
+
 
 /**
  * Remove a user from the matchmaking queue and clear timers
