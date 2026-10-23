@@ -192,7 +192,6 @@ export const getChatMessages = async (req, res) => {
     return res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
-
 /**
  * Send a chat message to a user.
  * Route: POST /api/user/lobby/messages
