@@ -16,6 +16,7 @@ import {
   processLoginStreak,
 } from "../utils/userHelper.js";
 import { recordLoginHistory } from "../utils/loginHistoryHelper.js";
+import dbCommonQuery from "../utils/dbCommonQuery.js";
 
 /**
  * Check if email is already registered and if it has a password set.
