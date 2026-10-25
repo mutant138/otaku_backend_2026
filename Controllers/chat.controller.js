@@ -57,11 +57,17 @@ export const getLobbyChats = async (req, res) => {
         action: "findById",
         filter: userId,
         projection:
-          "username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics isPremium activeSubscription userId",
+          "username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics isPremium activeSubscription userId isBot",
         lean: true,
       });
 
       if (!otherUser) continue;
+      // If current user has purchased a plan, do not show bot accounts or bot conversations
+      const currentUserHasPlan =
+        (req.user.isPremium || req.user.activeSubscription?.planId) &&
+        req.user.activeSubscription?.expiresAt &&
+        new Date(req.user.activeSubscription.expiresAt) > new Date();
+      if (currentUserHasPlan && otherUser.isBot) continue;
 
       const latestMessage = await dbCommonQuery({
         model: "Message",

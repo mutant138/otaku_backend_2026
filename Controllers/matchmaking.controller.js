@@ -422,8 +422,18 @@ export const getLobbyLikes = async (req, res) => {
       lean: true,
     });
 
+    const currentUserHasPlan =
+      (req.user.isPremium || req.user.activeSubscription?.planId) &&
+      req.user.activeSubscription?.expiresAt &&
+      new Date(req.user.activeSubscription.expiresAt) > new Date();
+
     const likes = likedSwipes
-      .filter((s) => s.swiper && s.swiper.role !== "admin")
+      .filter((s) => {
+        if (!s.swiper || s.swiper.role === "admin") return false;
+        // If current user purchased a plan, hide bot likes
+        if (currentUserHasPlan && s.swiper.isBot) return false;
+        return true;
+      })
       .map((s) => {
         const userRes = buildPublicUserResponse(s.swiper);
         if (userRes) {
