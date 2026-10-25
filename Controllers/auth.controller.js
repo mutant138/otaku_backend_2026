@@ -2,9 +2,12 @@ import bcrypt from "bcryptjs";
 import passport from "passport";
 import axios from "axios";
 import Razorpay from "razorpay";
-import dbCommonQuery from "../utils/dbCommonQuery.js";
-import { generateAuthTokens, verifyRefreshToken, generateUserId } from "../utils/jwt.js";
-import { sendEmail } from "../utils/email.js";
+import {
+  generateAuthTokens,
+  generateAccessToken,
+  verifyRefreshToken,
+  generateUserId,
+} from "../utils/jwt.js";
 import User from "../Models/user.schema.js";
 import {
   generateOTP,
@@ -955,24 +958,24 @@ export const refreshToken = async (req, res) => {
 
     const decoded = verifyRefreshToken(incomingRefreshToken);
     if (!decoded || !decoded.id) {
+      console.warn("[Refresh Token] Verification failed or token expired.");
       return res.status(401).json({ status: false, message: "Invalid or expired refresh token" });
     }
 
     const user = await User.findById(decoded.id);
     if (!user || !user.refreshToken || user.refreshToken !== incomingRefreshToken) {
+      console.warn(`[Refresh Token] User ${decoded.id} token mismatch or revoked.`);
       return res.status(401).json({ status: false, message: "Refresh token is invalid or has been revoked" });
     }
 
-    // Token rotation: issue fresh access token and fresh refresh token
-    const tokens = generateAuthTokens(user._id);
-    user.refreshToken = tokens.refreshToken;
-    await user.save();
+    // Issue a fresh 15-minute access token for the user while keeping the valid 30-day refresh token
+    const token = generateAccessToken(user._id);
 
     return res.status(200).json({
       status: true,
       message: "Token refreshed successfully",
-      token: tokens.token,
-      refreshToken: tokens.refreshToken,
+      token,
+      refreshToken: user.refreshToken,
       user: buildUserResponse(user),
     });
   } catch (error) {
