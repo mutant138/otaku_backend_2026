@@ -3,6 +3,116 @@ import { buildPublicUserResponse } from "../utils/userHelper.js";
 import { sendRealtimeSwipeSync } from "../socket/socket.js";
 
 /**
+ * Calculates a dynamic, personalized compatibility & recommendation score (0-150+)
+ * between the logged-in user and a candidate profile.
+ * Factors:
+ *  1. Shared anime genres (+12 pts each)
+ *  2. Shared game genres (+12 pts each)
+ *  3. Shared favorite anime titles (+25 pts each)
+ *  4. Shared favorite game titles (+25 pts each)
+ *  5. Faction path alignment (+15 pts exact, +10 pts compatible)
+ *  6. Relationship goal alignment (+12 pts)
+ *  7. Gender complementarity (+25 pts)
+ *  8. Profile completeness (+15 pts for real photos, +10 pts for bio, +10 pts verified)
+ *  9. Daily personalized jitter (prevents static ordering while keeping high-matches on top)
+ */
+const calculateRecommendationScore = (currentUser, candidate) => {
+  if (!currentUser || !candidate) return 50;
+
+  let score = 50;
+
+  const myPrefs = currentUser.preferences || {};
+  const candPrefs = candidate.preferences || {};
+
+  const cleanStr = (val) => (typeof val === "string" ? val.toLowerCase().trim() : "");
+  const getGenreSlug = (g) => cleanStr(typeof g === "object" ? g.slug || g.name : g);
+  const getFavTitle = (f) => cleanStr(typeof f === "object" ? f.title : f);
+
+  // 1. Anime genres overlap
+  const myAnime = (myPrefs.animeGenres || []).map(getGenreSlug).filter(Boolean);
+  const candAnime = (candPrefs.animeGenres || []).map(getGenreSlug).filter(Boolean);
+  if (myAnime.length > 0 && candAnime.length > 0) {
+    const sharedAnime = myAnime.filter((g) => candAnime.includes(g));
+    score += sharedAnime.length * 12;
+  }
+
+  // 2. Game genres overlap
+  const myGames = (myPrefs.gameGenres || []).map(getGenreSlug).filter(Boolean);
+  const candGames = (candPrefs.gameGenres || []).map(getGenreSlug).filter(Boolean);
+  if (myGames.length > 0 && candGames.length > 0) {
+    const sharedGames = myGames.filter((g) => candGames.includes(g));
+    score += sharedGames.length * 12;
+  }
+
+  // 3. Shared favorite anime titles
+  const myFavAnime = (myPrefs.animeFavorites || []).map(getFavTitle).filter(Boolean);
+  const candFavAnime = (candPrefs.animeFavorites || []).map(getFavTitle).filter(Boolean);
+  if (myFavAnime.length > 0 && candFavAnime.length > 0) {
+    const sharedFavAnime = myFavAnime.filter((t) => candFavAnime.includes(t));
+    score += sharedFavAnime.length * 25;
+  }
+
+  // 4. Shared favorite game titles
+  const myFavGames = (myPrefs.gameFavorites || []).map(getFavTitle).filter(Boolean);
+  const candFavGames = (candPrefs.gameFavorites || []).map(getFavTitle).filter(Boolean);
+  if (myFavGames.length > 0 && candFavGames.length > 0) {
+    const sharedFavGames = myFavGames.filter((t) => candFavGames.includes(t));
+    score += sharedFavGames.length * 25;
+  }
+
+  // 5. Faction Path alignment
+  const myPath = cleanStr(myPrefs.path || "both");
+  const candPath = cleanStr(candPrefs.path || "both");
+  if (myPath === candPath) {
+    score += 15;
+  } else if (myPath === "both" || candPath === "both") {
+    score += 10;
+  }
+
+  // 6. Relationship Goal (lookingFor) alignment
+  const myGoal = cleanStr(currentUser.lookingFor);
+  const candGoal = cleanStr(candidate.lookingFor);
+  if (myGoal && candGoal && myGoal === candGoal) {
+    score += 12;
+  }
+
+  // 7. Gender complementarity
+  const myGender = cleanStr(currentUser.gender);
+  const candGender = cleanStr(candidate.gender);
+  if (myGender && candGender) {
+    if (
+      (myGender === "male" && ["female", "woman", "girl"].includes(candGender)) ||
+      (myGender === "female" && ["male", "man", "guy"].includes(candGender))
+    ) {
+      score += 25;
+    }
+  }
+
+  // 8. Profile Completeness & Quality Boost
+  if (candidate.profilePics && candidate.profilePics.length > 0) {
+    score += 15;
+  }
+  if (candidate.bio && candidate.bio.trim().length > 10) {
+    score += 10;
+  }
+  if (candidate.isVerified) {
+    score += 10;
+  }
+
+  // 9. Stable daily pseudo-random jitter (prevents static ordering while keeping top matches first)
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const seedString = `${currentUser._id || ""}_${candidate._id || ""}_${todayStr}`;
+  let hash = 0;
+  for (let i = 0; i < seedString.length; i++) {
+    hash = (hash << 5) - hash + seedString.charCodeAt(i);
+    hash |= 0;
+  }
+  const jitter = (Math.abs(hash) % 15) - 7; // -7 to +7 variance
+
+  return score + jitter;
+};
+
+/**
  * Scan & discover candidates for player matches.
  * Route: GET /api/user/candidates
  */
@@ -55,13 +165,14 @@ export const getCandidates = async (req, res) => {
       query["preferences.path"] = { $in: ["game", "both"] };
     }
 
+    // Fetch an active candidate pool to rank by compatibility
     const users = await dbCommonQuery({
       model: "User",
       action: "find",
       filter: query,
       projection:
-        "username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics isPremium activeSubscription userId",
-      limit: 40,
+        "username avatar profilePics isVerified fullname gender age location bio preferences height weight education drinking smoking lookingFor kids politics isPremium activeSubscription userId isBot updatedAt createdAt",
+      limit: 120,
       lean: true,
     });
 
@@ -86,7 +197,18 @@ export const getCandidates = async (req, res) => {
     const resetTime = new Date();
     resetTime.setUTCHours(24, 0, 0, 0);
 
-    const candidates = users.map((user) => buildPublicUserResponse(user));
+    // If subscriber, filter out bot profiles
+    const pool = hasSubscription ? users.filter((u) => !u.isBot) : users;
+
+    // Rank candidates by personalized recommendation & interest score
+    pool.sort((a, b) => {
+      const scoreA = calculateRecommendationScore(req.user, a);
+      const scoreB = calculateRecommendationScore(req.user, b);
+      return scoreB - scoreA;
+    });
+
+    // Return the top 40 best-matched candidates
+    const candidates = pool.slice(0, 40).map((user) => buildPublicUserResponse(user));
     return res.status(200).json({
       status: true,
       candidates,
